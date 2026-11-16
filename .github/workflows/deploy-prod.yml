@@ -63,8 +63,9 @@ jobs:
     steps:
       - name: Garantir que o deploy é da main
         run: |
-          if [ "${{ github.ref }}" != "refs/heads/main" ]; then
-            echo "Deploy de produção só a partir da branch main (ref atual: ${{ github.ref })."
+          REF="${{ github.ref }}"
+          if [ "$REF" != "refs/heads/main" ]; then
+            echo "Deploy de produção só a partir da branch main (ref atual: $REF)."
             exit 1
           fi
 
