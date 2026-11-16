@@ -50,7 +50,7 @@ ghcr.io/filipepires1/igreja-shallom-app-publico
 ghcr.io/filipepires1/igreja-shallom-app-membros
 ```
 
-- Teste publica `:<sha>` e `:test`.
+- Teste publica `:test-<sha>` e `:test`.
 - Produção publica `:<sha>` e `:latest`.
 - O deploy sempre usa a tag do commit (`IMAGE_TAG`).
 

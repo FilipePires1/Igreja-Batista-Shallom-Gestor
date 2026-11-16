@@ -45,7 +45,7 @@ ghcr.io/filipepires1/igreja-shallom-app-publico
 ghcr.io/filipepires1/igreja-shallom-app-membros
 ```
 
-- Teste: `:<sha>` e `:test`.
+- Teste: `:test-<sha>` e `:test`.
 - Produção: `:<sha>` e `:latest`.
 - O deploy sempre usa `IMAGE_TAG=<sha>`.
 
