@@ -1,32 +1,42 @@
 # Handoff de Deploy — Igreja Batista Shallom
 
 **Data:** 16/11/2026  
-**Status:** homologação publicada, CI/CD ativo e primeiro deploy automatizado validado.
+**Status:** dois ambientes ativos (teste e produção), CI/CD separado e aprovação obrigatória para produção.
 
-## 1. O que está no ar
+## 1. Ambientes
 
-| Ambiente | URL | Proteção |
-| --- | --- | --- |
-| Painel administrativo | https://shallom.116-203-100-189.sslip.io | Basic Auth |
-| App público | https://app.116-203-100-189.sslip.io | Aberto |
-| App de membros | https://membros.116-203-100-189.sslip.io | Basic Auth + login |
+| Ambiente | Painel | App público | App de membros | Deploy |
+| --- | --- | --- | --- | --- |
+| Teste | https://shallom.116-203-100-189.sslip.io | https://app.116-203-100-189.sslip.io | https://membros.116-203-100-189.sslip.io | push na `develop` |
+| Produção | https://sistema.116-203-100-189.sslip.io | https://app-prod.116-203-100-189.sslip.io | https://membros-prod.116-203-100-189.sslip.io | manual + aprovação |
 
-- TLS Let's Encrypt válido nos três domínios.
-- Quatro containers `healthy`: `nextep-shallom-api`, `nextep-shallom-web`, `nextep-shallom-app-publico`, `nextep-shallom-app-membros`.
-- Banco SQLite preservado no volume `nextep_shallom_data` (dados de teste intactos).
-- API em produção de homologação responde `/api/health`, `/api/stats` e `/api/auth/login`.
+- Teste: Basic Auth + banco com dados de teste preservados.
+- Produção: Basic Auth + banco novo, apenas base (cargos, ministérios, configurações e admin).
+- TLS Let's Encrypt válido nos seis domínios.
+- Produção é uma **pré-produção controlada**; o domínio próprio da igreja ainda não foi configurado.
 
-## 2. Repositório e pipeline
+## 2. Repositório e CI/CD
 
 - Repositório: https://github.com/FilipePires1/Igreja-Batista-Shallom-Gestor
-- Branch de deploy: `main`
-- Commit implantado no primeiro deploy: `cb65cb6` (`fix(ci): sincroniza package-lock do app publico`)
-- Run validado: https://github.com/FilipePires1/Igreja-Batista-Shallom-Gestor/actions/runs/43920419812
-- Workflows:
-  - `.github/workflows/ci.yml` — compila API e exporta os apps web em PRs e pushes na `develop`.
-  - `.github/workflows/deploy.yml` — em push na `main` ou execução manual: build das 4 imagens, push no GHCR, SSH no servidor, pull e `up -d`, healthcheck.
+- Branches: `main` (produção) e `develop` (teste).
+- Teste implantado: `22bd3ff` — run https://github.com/FilipePires1/Igreja-Batista-Shallom-Gestor/actions/runs/43922417291
+- Produção implantada: `c78d0a3` — run https://github.com/FilipePires1/Igreja-Batista-Shallom-Gestor/actions/runs/43923250512
 
-Imagens publicadas (tag do commit e `latest`):
+Workflows:
+
+| Arquivo | Gatilho | Destino |
+| --- | --- | --- |
+| `.github/workflows/ci.yml` | PRs e push na `develop` | build da API e apps |
+| `.github/workflows/deploy-test.yml` | push na `develop` ou manual | `/opt/nextep/shallom` |
+| `.github/workflows/deploy-prod.yml` | manual ou `repository_dispatch` | `/opt/nextep/shallom-prod` |
+
+Produção usa o environment `producao` no GitHub, com:
+
+- reviewer obrigatório: `FilipePires1`;
+- branch policy: somente `main`;
+- nenhum deploy automático por push.
+
+Imagens no GHCR:
 
 ```text
 ghcr.io/filipepires1/igreja-shallom-api
@@ -35,132 +45,168 @@ ghcr.io/filipepires1/igreja-shallom-app-publico
 ghcr.io/filipepires1/igreja-shallom-app-membros
 ```
 
-### Secret configurado no GitHub
+- Teste: `:<sha>` e `:test`.
+- Produção: `:<sha>` e `:latest`.
+- O deploy sempre usa `IMAGE_TAG=<sha>`.
 
-| Secret | Valor |
-| --- | --- |
-| `SSH_PRIVATE_KEY` | chave privada do usuário `filipe` no servidor |
+### Como fazer deploy
 
-O `GITHUB_TOKEN` é usado automaticamente para o GHCR. Não há token de longo prazo
-no repositório.
+Teste:
 
-## 3. Como fazer deploy
+```bash
+git checkout develop
+git merge main
+git push origin develop
+```
 
-Normal: fazer push/merge na `main`.
+Produção:
 
-Manual: GitHub → Actions → **Deploy HOMOLOG - Igreja Batista Shallom** → Run workflow.
+1. GitHub → Actions → **Deploy PRODUCAO - Igreja Batista Shallom** → Run workflow.
+2. Escolher a branch `main`.
+3. Aprovar no environment `producao`.
+4. O workflow builda, publica no GHCR, puxa no servidor e valida os healthchecks.
 
-O workflow:
-
-1. builda as 4 imagens em paralelo (matriz) com cache do GitHub Actions;
-2. publica `:<sha>` e `:latest` no GHCR;
-3. entra por SSH em `116.203.100.189` como `filipe`;
-4. faz login no GHCR com o token efêmero do workflow;
-5. roda `docker compose pull && docker compose up -d --remove-orphans`;
-6. aguarda os 4 containers ficarem `healthy` e falha o job se algum não subir.
-
-> **Atenção:** o pipeline NÃO copia `compose.yml`, `Caddyfile` nem `.env`. Mudanças
-> nesses arquivos precisam ser aplicadas manualmente no servidor. O pipeline só
-> troca as imagens.
-
-## 4. Servidor
+## 3. Servidor
 
 ```text
-/opt/nextep/shallom/
-├── compose.yml       # stack com imagens ghcr.io/filipepires1/igreja-shallom-*:${IMAGE_TAG}
-├── .env              # segredos reais (CORS, JWT, DATABASE_URL)
+/opt/nextep/shallom/          # TESTE
+├── compose.yml
+├── .env
 ├── backup.sh
-├── app/              # legado do primeiro deploy; NÃO é mais usado
-└── apps/             # legado do primeiro deploy; NÃO é mais usado
+└── ...
+
+/opt/nextep/shallom-prod/     # PRODUÇÃO
+├── compose.prod.yml
+├── .env
+├── backup.sh
+└── ...
 
 /opt/nextep/edge/Caddyfile
 /opt/nextep/backups/shallom/
+/opt/nextep/backups/shallom-prod/
 ```
 
-- Deploy usa `IMAGE_TAG` = SHA do commit.
-- A API roda `prisma migrate deploy` no start.
-- Backup diário às 02:15, retenção de 7 dias.
-- Caddy faz Basic Auth no painel e no app de membros; `/api/*` do domínio de
-  membros vai direto para a API.
+- Teste: containers `nextep-shallom-*`, volume `nextep_shallom_data`.
+- Produção: containers `nextep-shallom-prod-*`, volume `nextep_shallom_prod_data`.
+- Redes internas separadas; ambas conectadas à `nextep_edge`.
+- O Nginx do painel usa `API_UPSTREAM` para apontar para a API do ambiente correto.
+
+## 4. Estado validado
+
+Teste:
+
+- Quatro containers `healthy` na tag `22bd3ff`.
+- Painel `200` com Basic Auth; login `201`.
+- App público `200`.
+- App de membros `401` sem auth e `200` com auth; login `201`.
+- `/api/stats` preservado com os dados de teste.
+
+Produção:
+
+- Quatro containers `healthy` na tag `c78d0a3`.
+- Seed `seed-prod.js` executado: 6 cargos, 17 ministérios, permissões, seções do app, configurações e admin.
+- Painel `200` com Basic Auth; login `201`.
+- App público `200`.
+- App de membros `401` sem auth e `200` com auth; login `201`.
+- `/api/stats` limpo: 1 membro (admin), 0 escalas, 0 avisos.
+
+Backups:
+
+- Teste: diário às 02:15, retenção de 7 dias.
+- Produção: diário às 02:30, retenção de 7 dias.
+- Backup manual de produção validado em `/opt/nextep/backups/shallom-prod/`.
 
 ## 5. Credenciais
 
 Não ficam neste arquivo nem no repositório. Filipe tem os valores atuais.
 
-- Basic Auth: usuário `shallom`.
-- Login administrativo: `pastor@ibscn.org` (SUPER_ADMIN/PASTOR).
-- App de membros usa o mesmo login da tabela `User`.
+- Teste — Basic Auth: usuário `shallom`; admin `pastor@ibscn.org`.
+- Produção — Basic Auth: usuário `shallomprod`; admin `pastor@ibscn.org`.
+- As senhas de produção foram geradas aleatoriamente no provisionamento.
 
-## 6. O que foi validado após o deploy
+## 6. O que foi configurado nesta etapa
 
-- Painel: `200` com Basic Auth; login `201`.
-- App público: `200` aberto; assets com hash novo.
-- App de membros: `401` sem Basic Auth, `200` com Basic Auth; login `201`.
-- `/api/stats`: `200` com dados preservados (1 membro, 8 escalas, 4 avisos).
-- Containers: os quatro apontando para `ghcr.io/filipepires1/igreja-shallom-*:cb65cb6...` e `healthy`.
-- Arquivos `_test.html`, `_t2.html`, `_t3.html` (bypass de login) removidos do
-  painel e da imagem; guardados localmente em `referencia/test-backdoors/`
-  (ignorado pelo Git e pelo Docker).
+- Separação de stack, rede, volume, `.env`, containers e domínios.
+- Workflow de teste na `develop` e workflow de produção manual com aprovação.
+- Environment `producao` no GitHub com reviewer e branch policy.
+- `seed-prod.js` não destrutivo, sem dados demo, com senha de admin via env.
+- Nginx do painel parametrizado por `API_UPSTREAM`.
+- Backup próprio de produção + cron.
+- Blocos de produção no Caddy, com Basic Auth separado.
+- Remoção dos arquivos `_test.html`, `_t2.html` e `_t3.html` do painel/imagem.
 
-## 7. Pendências antes de produção
+## 7. Pendências antes de produção real
 
 - [ ] Trocar token `temp-<id>` por JWT assinado.
-- [ ] Aplicar guards reais nas rotas da API (hoje o Basic Auth do Caddy protege).
+- [ ] Aplicar guards reais nas rotas da API.
 - [ ] Remover validação de sessão via `localStorage` no painel.
-- [ ] Trocar o seed `admin123` e criar usuários reais.
-- [ ] Avaliar tornar o repositório privado (hoje é público).
-- [ ] Criar ambiente de produção separado com aprovação explícita.
+- [ ] Trocar o seed `admin123` do ambiente de teste.
+- [ ] Avaliar tornar o repositório privado.
+- [ ] Configurar domínio próprio da igreja e Cloudflare.
+- [ ] Remover o Basic Auth quando a autenticação real estiver pronta.
 - [ ] Testar notificações push do PWA no iPhone.
 - [ ] Revogar o token Cloudflare exposto em conversa anterior, se ainda válido.
 
 ## 8. Rollback e troubleshooting
 
-Rollback para um commit anterior:
+Rollback de teste:
 
 ```bash
 cd /opt/nextep/shallom
-export IMAGE_TAG=<sha-do-commit>
+export IMAGE_TAG=<sha>
 docker compose pull
 docker compose up -d
 ```
 
-Se o pull falhar por pacote privado, autenticar no GHCR com um PAT `read:packages`:
+Rollback de produção:
 
 ```bash
-echo "<pat>" | docker login ghcr.io -u FilipePires1 --password-stdin
+cd /opt/nextep/shallom-prod
+export IMAGE_TAG=<sha>
+docker compose -f compose.prod.yml pull
+docker compose -f compose.prod.yml up -d
+```
+
+Se o pull falhar por pacote privado:
+
+```bash
+echo "<pat-read-packages>" | docker login ghcr.io -u FilipePires1 --password-stdin
 ```
 
 Diagnóstico:
 
 ```bash
 docker ps --filter name=nextep-shallom
+docker ps --filter name=nextep-shallom-prod
 docker inspect -f '{{.Config.Image}} {{.State.Health.Status}}' nextep-shallom-api
-docker logs -f nextep-shallom-api
-docker compose -f /opt/nextep/shallom/compose.yml ps
+docker inspect -f '{{.Config.Image}} {{.State.Health.Status}}' nextep-shallom-prod-api
+docker logs -f nextep-shallom-prod-api
 ```
 
-Se o Caddy não rotear, validar antes de recarregar:
+Caddy:
 
 ```bash
 docker exec nextep-edge caddy validate --config /etc/caddy/Caddyfile
 docker exec nextep-edge caddy reload --config /etc/caddy/Caddyfile
 ```
 
-## 9. Arquivos-chave do repositório
+## 9. Arquivos-chave
 
-- `deploy/compose.yml` — stack do servidor (imagens GHCR).
+- `deploy/compose.yml` — stack de teste.
+- `deploy/compose.prod.yml` — stack de produção.
 - `deploy/Dockerfile` — API.
-- `deploy/web.Dockerfile` — painel.
-- `deploy/app-publico.Dockerfile` e `deploy/app-membros.Dockerfile` — apps Expo.
-- `deploy/nginx.conf` e `deploy/apps-nginx.conf` — Nginx.
-- `deploy/caddy-shallom-apps.conf` — blocos dos subdomínios no Caddy.
-- `deploy/README-DEPLOY.md` — documentação operacional detalhada.
+- `deploy/web.Dockerfile` + `deploy/nginx.conf.template` — painel.
+- `deploy/app-publico.Dockerfile` e `deploy/app-membros.Dockerfile` — apps.
+- `deploy/caddy-shallom-apps.conf` e `deploy/caddy-shallom-prod.conf` — Caddy (hash como placeholder).
+- `deploy/backup.sh` e `deploy/backup-prod.sh` — backups.
+- `banco-de-dados/ibscn-api/prisma/seed-prod.js` — seed de produção.
+- `deploy/README-DEPLOY.md` — documentação operacional completa.
 
 ## 10. Observações para o próximo chat
 
 - O app público continua mock/estático; o de membros consome a API real.
 - O repositório é público: nunca commitar `.env`, banco, backups ou credenciais.
-- O primeiro push na `main` dispara deploy; use `[skip ci]` em commits apenas de
-  documentação para evitar rebuild desnecessário.
-- Se alterar `compose.yml`, aplique a versão nova em `/opt/nextep/shallom/compose.yml`
-  antes do deploy.
+- Mudanças em `compose.yml`, `Caddyfile` ou `.env` **não** são aplicadas pelo pipeline;
+  precisam ser copiadas para o servidor manualmente.
+- Use `[skip ci]` em commits apenas de documentação para evitar rebuild.
+- O gate de produção está ativo; o primeiro deploy foi aprovado manualmente no provisionamento.
