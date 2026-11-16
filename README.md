@@ -18,9 +18,12 @@ Sistema de gestão da Igreja Batista Shallom (Cidade Nobre), com painel administ
 
 | Ambiente | URL | Proteção |
 | --- | --- | --- |
-| Painel | https://shallom.116-203-100-189.sslip.io | Basic Auth |
-| App público | https://app.116-203-100-189.sslip.io | Aberto |
-| App de membros | https://membros.116-203-100-189.sslip.io | Basic Auth + login |
+| Teste — painel | https://shallom.116-203-100-189.sslip.io | Basic Auth |
+| Teste — app público | https://app.116-203-100-189.sslip.io | Aberto |
+| Teste — app de membros | https://membros.116-203-100-189.sslip.io | Basic Auth + login |
+| Produção — painel | https://sistema.116-203-100-189.sslip.io | Basic Auth |
+| Produção — app público | https://app-prod.116-203-100-189.sslip.io | Aberto |
+| Produção — app de membros | https://membros-prod.116-203-100-189.sslip.io | Basic Auth + login |
 
 Credenciais são entregues fora do repositório e nunca devem ser commitadas.
 
@@ -63,7 +66,8 @@ npx expo export --platform web --output-dir dist
 ## CI/CD
 
 - **CI** (`.github/workflows/ci.yml`): roda em pull requests e pushes na `develop`; compila a API e exporta os dois apps web.
-- **Deploy** (`.github/workflows/deploy.yml`): roda em push na `main` ou manualmente; builda as quatro imagens, publica no GHCR e atualiza o servidor de homologação via SSH.
+- **Teste** (`.github/workflows/deploy-test.yml`): push na `develop` ou manual; builda as quatro imagens, publica no GHCR e atualiza `/opt/nextep/shallom`.
+- **Produção** (`.github/workflows/deploy-prod.yml`): somente manual ou `repository_dispatch`; exige aprovação no environment `producao` e branch `main`; atualiza `/opt/nextep/shallom-prod`.
 
 Imagens publicadas:
 
@@ -74,17 +78,20 @@ ghcr.io/filipepires1/igreja-shallom-app-publico
 ghcr.io/filipepires1/igreja-shallom-app-membros
 ```
 
-### Secrets necessários no GitHub
+### Secrets e environments
 
-| Secret | Uso |
+| Item | Uso |
 | --- | --- |
 | `SSH_PRIVATE_KEY` | Chave privada SSH do usuário `filipe` no servidor |
+| `producao` | Environment com aprovação obrigatória e branch `main` |
 
 O `GITHUB_TOKEN` é usado automaticamente para publicar e puxar as imagens do GHCR.
 
 ### Servidor
 
-O stack fica em `/opt/nextep/shallom` (`compose.yml` + `.env`). O deploy não altera o `.env` nem o banco; apenas puxa as imagens da tag do commit e recria os containers.
+- Teste: `/opt/nextep/shallom` (`compose.yml` + `.env`).
+- Produção: `/opt/nextep/shallom-prod` (`compose.prod.yml` + `.env`).
+- O deploy não altera `.env` nem banco; apenas puxa a imagem da tag do commit e recria os containers.
 
 ## Segurança
 

@@ -1,21 +1,18 @@
-name: Deploy HOMOLOG - Igreja Batista Shallom
+name: Deploy PRODUCAO - Igreja Batista Shallom
 
-# Push na main -> build das imagens no GHCR + deploy no servidor de homologação.
-# Produção da igreja ainda não está publicada; quando existir, o deploy de
-# produção deve ser um workflow separado, com aprovação explícita.
-
+# Produção NÃO sobe em push. Roda manualmente (workflow_dispatch) ou por
+# repository_dispatch do Gestor, sempre com aprovação no environment "producao".
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
+  repository_dispatch:
+    types: [deploy-production]
 
 permissions:
   contents: read
   packages: write
 
 concurrency:
-  group: deploy-shallom
+  group: deploy-shallom-producao
   cancel-in-progress: false
 
 jobs:
@@ -59,11 +56,19 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}
 
   deploy:
-    name: Deploy no servidor
+    name: Deploy em produção
     needs: build
     runs-on: ubuntu-latest
+    environment: producao
     steps:
-      - name: Atualizar containers
+      - name: Garantir que o deploy é da main
+        run: |
+          if [ "${{ github.ref }}" != "refs/heads/main" ]; then
+            echo "Deploy de produção só a partir da branch main (ref atual: ${{ github.ref })."
+            exit 1
+          fi
+
+      - name: Atualizar containers de produção
         uses: appleboy/ssh-action@v1.0.0
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -78,14 +83,14 @@ jobs:
 
             echo "$GHCR_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
 
-            cd /opt/nextep/shallom
+            cd /opt/nextep/shallom-prod
             export IMAGE_TAG
 
-            docker compose pull
-            docker compose up -d --remove-orphans
+            docker compose -f compose.prod.yml pull
+            docker compose -f compose.prod.yml up -d --remove-orphans
             docker image prune -f
 
-            for c in nextep-shallom-api nextep-shallom-web nextep-shallom-app-publico nextep-shallom-app-membros; do
+            for c in nextep-shallom-prod-api nextep-shallom-prod-web nextep-shallom-prod-app-publico nextep-shallom-prod-app-membros; do
               status="missing"
               for i in $(seq 1 40); do
                 status=$(docker inspect -f '{{.State.Health.Status}}' "$c" 2>/dev/null || echo missing)
@@ -101,4 +106,4 @@ jobs:
               fi
             done
 
-            docker compose ps
+            docker compose -f compose.prod.yml ps
