@@ -8,7 +8,7 @@ x-logging: &default-logging
 
 services:
   web:
-    image: ghcr.io/filipepires1/igreja-shallom-web:${IMAGE_TAG:-latest}
+    image: ghcr.io/filipepires1/igreja-shallom-web:${IMAGE_TAG:-test}
     container_name: nextep-shallom-web
     restart: unless-stopped
     depends_on:
@@ -27,7 +27,7 @@ services:
     logging: *default-logging
 
   app-publico:
-    image: ghcr.io/filipepires1/igreja-shallom-app-publico:${IMAGE_TAG:-latest}
+    image: ghcr.io/filipepires1/igreja-shallom-app-publico:${IMAGE_TAG:-test}
     container_name: nextep-shallom-app-publico
     restart: unless-stopped
     networks:
@@ -41,7 +41,7 @@ services:
     logging: *default-logging
 
   app-membros:
-    image: ghcr.io/filipepires1/igreja-shallom-app-membros:${IMAGE_TAG:-latest}
+    image: ghcr.io/filipepires1/igreja-shallom-app-membros:${IMAGE_TAG:-test}
     container_name: nextep-shallom-app-membros
     restart: unless-stopped
     networks:
@@ -55,7 +55,7 @@ services:
     logging: *default-logging
 
   api:
-    image: ghcr.io/filipepires1/igreja-shallom-api:${IMAGE_TAG:-latest}
+    image: ghcr.io/filipepires1/igreja-shallom-api:${IMAGE_TAG:-test}
     container_name: nextep-shallom-api
     restart: unless-stopped
     env_file:

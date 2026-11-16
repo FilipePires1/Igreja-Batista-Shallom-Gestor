@@ -53,6 +53,7 @@ ghcr.io/filipepires1/igreja-shallom-app-membros
 - Teste publica `:test-<sha>` e `:test`.
 - Produção publica `:<sha>` e `:latest`.
 - O deploy sempre usa a tag do commit (`IMAGE_TAG`).
+- Sem `IMAGE_TAG`, o compose de teste usa `:test` e o de produção usa `:latest`.
 
 ### Secrets e environments
 
