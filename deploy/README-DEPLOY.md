@@ -4,27 +4,31 @@
 >
 > | Ambiente | URL | Proteção | Deploy |
 > | --- | --- | --- | --- |
-> | Teste | https://shallom.116-203-100-189.sslip.io | Basic Auth | push na `develop` |
-> | Teste (app público) | https://app.116-203-100-189.sslip.io | Aberto | push na `develop` |
-> | Teste (membros) | https://membros.116-203-100-189.sslip.io | Basic Auth + login | push na `develop` |
-> | Produção | https://sistema.116-203-100-189.sslip.io | Basic Auth | manual + aprovação |
-> | Produção (app público) | https://app-prod.116-203-100-189.sslip.io | Aberto | manual + aprovação |
-> | Produção (membros) | https://membros-prod.116-203-100-189.sslip.io | Basic Auth + login | manual + aprovação |
+> | Teste | https://shallom-teste.116-203-100-189.sslip.io | Basic Auth | push na `develop` |
+> | Teste (app público) | https://app-teste.116-203-100-189.sslip.io | Aberto | push na `develop` |
+> | Teste (membros) | https://membros-teste.116-203-100-189.sslip.io | Basic Auth + login | push na `develop` |
+> | Produção | https://shallom.116-203-100-189.sslip.io | Basic Auth | manual + aprovação |
+> | Produção (app público) | https://app.116-203-100-189.sslip.io | Aberto | manual + aprovação |
+> | Produção (membros) | https://membros.116-203-100-189.sslip.io | Basic Auth + login | manual + aprovação |
 
 ## Arquitetura
 
 ```text
 Internet
   -> Caddy (nextep-edge, 80/443)
-     -> shallom.*       -> nextep-shallom-web / app-publico / app-membros
-     -> app.*           -> nextep-shallom-app-publico
-     -> membros.*       -> Basic Auth -> /api/* -> nextep-shallom-api
-                                      -> demais  -> nextep-shallom-app-membros
-     -> sistema.*       -> Basic Auth -> nextep-shallom-prod-web
-     -> app-prod.*      -> nextep-shallom-prod-app-publico
-     -> membros-prod.*  -> Basic Auth -> /api/* -> nextep-shallom-prod-api
+     -> shallom.*       -> Basic Auth -> nextep-shallom-prod-web
+     -> app.*           -> nextep-shallom-prod-app-publico
+     -> membros.*       -> Basic Auth -> /api/* -> nextep-shallom-prod-api
                                       -> demais  -> nextep-shallom-prod-app-membros
+     -> shallom-teste.* -> Basic Auth -> nextep-shallom-web
+     -> app-teste.*     -> nextep-shallom-app-publico
+     -> membros-teste.* -> Basic Auth -> /api/* -> nextep-shallom-api
+                                      -> demais  -> nextep-shallom-app-membros
+     -> sistema.* / app-prod.* / membros-prod.* -> aliases de produção
 ```
+
+> Os domínios antigos `sistema...`, `app-prod...` e `membros-prod...` continuam
+> ativos como aliases da produção.
 
 - API: NestJS + Prisma 7 + SQLite.
 - Painel: HTML/CSS/JS servido pelo Nginx (upstream da API via `API_UPSTREAM`).

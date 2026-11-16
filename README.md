@@ -18,14 +18,17 @@ Sistema de gestão da Igreja Batista Shallom (Cidade Nobre), com painel administ
 
 | Ambiente | URL | Proteção |
 | --- | --- | --- |
-| Teste — painel | https://shallom.116-203-100-189.sslip.io | Basic Auth |
-| Teste — app público | https://app.116-203-100-189.sslip.io | Aberto |
-| Teste — app de membros | https://membros.116-203-100-189.sslip.io | Basic Auth + login |
-| Produção — painel | https://sistema.116-203-100-189.sslip.io | Basic Auth |
-| Produção — app público | https://app-prod.116-203-100-189.sslip.io | Aberto |
-| Produção — app de membros | https://membros-prod.116-203-100-189.sslip.io | Basic Auth + login |
+| Teste — painel | https://shallom-teste.116-203-100-189.sslip.io | Basic Auth |
+| Teste — app público | https://app-teste.116-203-100-189.sslip.io | Aberto |
+| Teste — app de membros | https://membros-teste.116-203-100-189.sslip.io | Basic Auth + login |
+| Produção — painel | https://shallom.116-203-100-189.sslip.io | Basic Auth |
+| Produção — app público | https://app.116-203-100-189.sslip.io | Aberto |
+| Produção — app de membros | https://membros.116-203-100-189.sslip.io | Basic Auth + login |
 
 Credenciais são entregues fora do repositório e nunca devem ser commitadas.
+
+> Os domínios antigos `sistema.116...`, `app-prod.116...` e `membros-prod.116...`
+> continuam ativos como aliases da produção.
 
 ## Desenvolvimento local
 

@@ -7,10 +7,13 @@ Guia para trabalhar no sistema: ambientes, banco, migrations, seeds, branches e 
 | Ambiente | Painel | App público | Membros | Deploy |
 | --- | --- | --- | --- | --- |
 | Local | http://localhost:8080 | Expo local | Expo local | manual |
-| Teste | https://shallom.116-203-100-189.sslip.io | https://app.116-203-100-189.sslip.io | https://membros.116-203-100-189.sslip.io | push na `develop` |
-| Produção | https://sistema.116-203-100-189.sslip.io | https://app-prod.116-203-100-189.sslip.io | https://membros-prod.116-203-100-189.sslip.io | manual + aprovação |
+| Teste | https://shallom-teste.116-203-100-189.sslip.io | https://app-teste.116-203-100-189.sslip.io | https://membros-teste.116-203-100-189.sslip.io | push na `develop` |
+| Produção | https://shallom.116-203-100-189.sslip.io | https://app.116-203-100-189.sslip.io | https://membros.116-203-100-189.sslip.io | manual + aprovação |
 
 Credenciais de Basic Auth e admin são entregues pelo responsável. Não commitar.
+
+> Os domínios antigos `sistema.116...`, `app-prod.116...` e `membros-prod.116...`
+> continuam ativos como aliases da produção.
 
 ## Pré-requisitos
 

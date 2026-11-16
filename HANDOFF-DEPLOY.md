@@ -7,13 +7,15 @@
 
 | Ambiente | Painel | App público | App de membros | Deploy |
 | --- | --- | --- | --- | --- |
-| Teste | https://shallom.116-203-100-189.sslip.io | https://app.116-203-100-189.sslip.io | https://membros.116-203-100-189.sslip.io | push na `develop` |
-| Produção | https://sistema.116-203-100-189.sslip.io | https://app-prod.116-203-100-189.sslip.io | https://membros-prod.116-203-100-189.sslip.io | manual + aprovação |
+| Teste | https://shallom-teste.116-203-100-189.sslip.io | https://app-teste.116-203-100-189.sslip.io | https://membros-teste.116-203-100-189.sslip.io | push na `develop` |
+| Produção | https://shallom.116-203-100-189.sslip.io | https://app.116-203-100-189.sslip.io | https://membros.116-203-100-189.sslip.io | manual + aprovação |
 
 - Teste: Basic Auth + banco com dados de teste preservados.
 - Produção: Basic Auth + banco novo, apenas base (cargos, ministérios, configurações e admin).
 - TLS Let's Encrypt válido nos seis domínios.
 - Produção é uma **pré-produção controlada**; o domínio próprio da igreja ainda não foi configurado.
+- Os domínios antigos `sistema.116...`, `app-prod.116...` e `membros-prod.116...`
+  continuam ativos como aliases da produção.
 
 ## 2. Repositório e CI/CD
 

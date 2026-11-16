@@ -37,20 +37,20 @@ check() {
 }
 
 # Teste
-check "teste / painel sem auth" "https://shallom.116-203-100-189.sslip.io/" "" "401"
-check "teste / painel" "https://shallom.116-203-100-189.sslip.io/" "$TEST_AUTH" "200"
-check "teste / app publico" "https://app.116-203-100-189.sslip.io/" "" "200"
-check "teste / membros sem auth" "https://membros.116-203-100-189.sslip.io/" "" "401"
-check "teste / membros" "https://membros.116-203-100-189.sslip.io/" "$TEST_AUTH" "200"
-check "teste / api health" "https://membros.116-203-100-189.sslip.io/api/health" "$TEST_AUTH" "200"
+check "teste / painel sem auth" "https://shallom-teste.116-203-100-189.sslip.io/" "" "401"
+check "teste / painel" "https://shallom-teste.116-203-100-189.sslip.io/" "$TEST_AUTH" "200"
+check "teste / app publico" "https://app-teste.116-203-100-189.sslip.io/" "" "200"
+check "teste / membros sem auth" "https://membros-teste.116-203-100-189.sslip.io/" "" "401"
+check "teste / membros" "https://membros-teste.116-203-100-189.sslip.io/" "$TEST_AUTH" "200"
+check "teste / api health" "https://membros-teste.116-203-100-189.sslip.io/api/health" "$TEST_AUTH" "200"
 
 # Produção
-check "producao / painel sem auth" "https://sistema.116-203-100-189.sslip.io/" "" "401"
-check "producao / painel" "https://sistema.116-203-100-189.sslip.io/" "$PROD_AUTH" "200"
-check "producao / app publico" "https://app-prod.116-203-100-189.sslip.io/" "" "200"
-check "producao / membros sem auth" "https://membros-prod.116-203-100-189.sslip.io/" "" "401"
-check "producao / membros" "https://membros-prod.116-203-100-189.sslip.io/" "$PROD_AUTH" "200"
-check "producao / api health" "https://membros-prod.116-203-100-189.sslip.io/api/health" "$PROD_AUTH" "200"
+check "producao / painel sem auth" "https://shallom.116-203-100-189.sslip.io/" "" "401"
+check "producao / painel" "https://shallom.116-203-100-189.sslip.io/" "$PROD_AUTH" "200"
+check "producao / app publico" "https://app.116-203-100-189.sslip.io/" "" "200"
+check "producao / membros sem auth" "https://membros.116-203-100-189.sslip.io/" "" "401"
+check "producao / membros" "https://membros.116-203-100-189.sslip.io/" "$PROD_AUTH" "200"
+check "producao / api health" "https://membros.116-203-100-189.sslip.io/api/health" "$PROD_AUTH" "200"
 
 if [ "$fail" -ne 0 ]; then
   echo "FALHOU: algum check nao retornou o esperado." >&2
