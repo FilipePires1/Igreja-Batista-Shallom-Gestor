@@ -2,7 +2,9 @@
 // Hidrata os mocks com dados reais quando a API está disponível.
 // Se a API estiver offline, os mocks originais continuam valendo.
 
-const API_BASES = ['/api'];
+const API_BASES = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
+  ? ['http://localhost:3000/api', '/api']
+  : ['/api'];
 
 let API_BASE = null;
 
