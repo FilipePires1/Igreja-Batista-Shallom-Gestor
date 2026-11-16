@@ -1,0 +1,101 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - develop
+
+permissions:
+  contents: read
+
+jobs:
+  api:
+    name: API (build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: banco-de-dados/ibscn-api
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: banco-de-dados/ibscn-api/package-lock.json
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Gerar Prisma Client
+        run: npx prisma generate --config prisma7.config.ts
+
+      - name: Compilar
+        run: npm run build
+
+  app-publico:
+    name: App público (build web)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app-publico/ibscn-publico
+    env:
+      EXPO_NO_TELEMETRY: "1"
+      CI: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app-publico/ibscn-publico/package-lock.json
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Checar TypeScript
+        run: npx tsc --noEmit
+
+      - name: Exportar build web
+        run: npx expo export --platform web --output-dir dist
+
+  app-membros:
+    name: App de membros (build web)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app-membros/ibscn-membros
+    env:
+      EXPO_NO_TELEMETRY: "1"
+      CI: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app-membros/ibscn-membros/package-lock.json
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Checar TypeScript
+        run: npx tsc --noEmit
+
+      - name: Exportar build web
+        run: npx expo export --platform web --output-dir dist
+
+  painel:
+    name: Painel (estrutura)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validar arquivos do painel
+        run: |
+          test -f sistema-web/index.html
+          test -f sistema-web/dashboard.html
+          test -f sistema-web/js/app.js

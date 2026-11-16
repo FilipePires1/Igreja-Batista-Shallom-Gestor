@@ -1,0 +1,97 @@
+name: nextep-shallom
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  web:
+    image: ghcr.io/filipepires1/igreja-shallom-web:${IMAGE_TAG:-latest}
+    container_name: nextep-shallom-web
+    restart: unless-stopped
+    depends_on:
+      - api
+    networks:
+      - internal
+      - edge
+    mem_limit: 64m
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging: *default-logging
+
+  app-publico:
+    image: ghcr.io/filipepires1/igreja-shallom-app-publico:${IMAGE_TAG:-latest}
+    container_name: nextep-shallom-app-publico
+    restart: unless-stopped
+    networks:
+      - edge
+    mem_limit: 32m
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging: *default-logging
+
+  app-membros:
+    image: ghcr.io/filipepires1/igreja-shallom-app-membros:${IMAGE_TAG:-latest}
+    container_name: nextep-shallom-app-membros
+    restart: unless-stopped
+    networks:
+      - edge
+    mem_limit: 32m
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging: *default-logging
+
+  api:
+    image: ghcr.io/filipepires1/igreja-shallom-api:${IMAGE_TAG:-latest}
+    container_name: nextep-shallom-api
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      DATABASE_URL: file:/app/data/ibscn.db
+      DATABASE_PATH: /app/data/ibscn.db
+      TZ: America/Sao_Paulo
+    volumes:
+      - shallom_data:/app/data
+    networks:
+      - internal
+      - edge
+    mem_limit: 384m
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    logging: *default-logging
+
+networks:
+  internal:
+    name: nextep_shallom_internal
+    driver: bridge
+  edge:
+    name: nextep_edge
+    external: true
+
+volumes:
+  shallom_data:
+    name: nextep_shallom_data

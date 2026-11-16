@@ -1,0 +1,929 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Igreja Shallom - Admin Workspace</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <!-- Sidebar -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <img src="assets/logo-branca.png" alt="Logo" class="sidebar-logo-img">
+      <div class="sidebar-brand">
+        <h2>Igreja Shallom</h2>
+        <span>Admin Workspace</span>
+      </div>
+      <button class="collapse-btn" id="collapseBtn" onclick="toggleSidebarCollapse()" title="Recolher menu">
+        <i data-lucide="chevrons-left"></i>
+      </button>
+    </div>
+
+    <nav class="sidebar-nav" id="sidebarNav">
+      <div class="nav-group-label">Principal</div>
+      <a href="#" class="nav-item active" data-section="dashboard" onclick="navigateTo('dashboard',this)">
+        <i data-lucide="layout-dashboard"></i><span>Início / Dashboard</span>
+      </a>
+      <a href="#" class="nav-item" data-section="pessoas" onclick="navigateTo('pessoas',this)">
+        <i data-lucide="users"></i><span>Pessoas &amp; Membros</span>
+      </a>
+      <a href="#" class="nav-item" data-section="setores" onclick="navigateTo('setores',this)">
+        <i data-lucide="network"></i><span>Setores &amp; Ministérios</span>
+      </a>
+      <a href="#" class="nav-item" data-section="escalas" onclick="navigateTo('escalas',this)">
+        <i data-lucide="clipboard-check"></i><span>Escalas de Serviço</span>
+      </a>
+      <a href="#" class="nav-item" data-section="agenda" onclick="navigateTo('agenda',this)">
+        <i data-lucide="calendar-days"></i><span>Agenda &amp; Cultos</span>
+      </a>
+      <a href="#" class="nav-item" data-section="avisos" onclick="navigateTo('avisos',this)">
+        <i data-lucide="megaphone"></i><span>Avisos &amp; Comunicados</span>
+      </a>
+
+      <div class="nav-group-label">Gestão &amp; Apps</div>
+      <a href="#" class="nav-item" data-section="app-publico" onclick="navigateTo('app-publico',this)">
+        <i data-lucide="smartphone"></i><span>App Público</span>
+        <span class="nav-badge badge-live">Live</span>
+      </a>
+      <a href="#" class="nav-item" data-section="cantina" onclick="navigateTo('cantina',this)">
+        <i data-lucide="store"></i><span>Cantina</span>
+        <span class="nav-status status-open" id="cantinaNavStatus"><span class="status-dot"></span>Aberta</span>
+      </a>
+
+      <div class="nav-group-label">Administração &amp; Finanças</div>
+      <a href="#" class="nav-item" data-section="tesouraria" data-roles="pastor,tesoureiro" onclick="navigateTo('tesouraria',this)">
+        <i data-lucide="wallet"></i><span>Tesouraria &amp; Dízimos</span>
+        <i data-lucide="lock" class="nav-lock"></i>
+      </a>
+      <a href="#" class="nav-item" data-section="relatorios" onclick="navigateTo('relatorios',this)">
+        <i data-lucide="bar-chart-3"></i><span>Relatórios &amp; Métricas</span>
+      </a>
+      <a href="#" class="nav-item" data-section="configuracoes" onclick="navigateTo('configuracoes',this)">
+        <i data-lucide="settings"></i><span>Configurações</span>
+      </a>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="sidebar-user" onclick="toggleAccountMenu(event)" title="Conta conectada">
+        <div class="user-avatar" id="sideUserAvatar"><i data-lucide="user-round"></i><span class="avatar-status"></span></div>
+        <div class="user-info">
+          <span class="user-name" id="sideUserName">Pr. Thiago Martins</span>
+          <span class="user-role" id="sideUserRole">Pastor</span>
+        </div>
+        <div class="footer-actions">
+          <button class="theme-btn" id="themeBtn" onclick="event.stopPropagation();toggleTheme()" title="Alternar tema (claro / escuro)">
+            <i data-lucide="moon"></i>
+          </button>
+          <button class="logout-btn" onclick="event.stopPropagation();logout()" title="Sair da conta">
+            <i data-lucide="log-out"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="sidebar-dev" title="Desenvolvido por Nextep Solutions">
+      <img src="assets/logo-azul.png" alt="Nextep Solutions">
+      <span class="sidebar-dev-txt">
+        <small>Desenvolvido por</small>
+        <b>Nextep Solutions</b>
+      </span>
+    </div>
+  </aside>
+
+  <!-- Main Content -->
+  <main class="main-content">
+    <!-- Top Bar -->
+    <header class="topbar">
+      <button class="menu-toggle" onclick="toggleSidebar()">
+        <i data-lucide="menu"></i>
+      </button>
+
+      <div class="topbar-search" id="topbarSearchWrap">
+        <i data-lucide="search" class="search-icon"></i>
+        <input type="text" id="topbarSearch" placeholder="Buscar no Dashboard..." oninput="handleModuleSearch(this.value)" onkeydown="if(event.key==='Enter'){handleModuleSearchEnter()}">
+        <span class="search-kbd">Ctrl K</span>
+      </div>
+
+      <div class="topbar-right">
+        <div class="topbar-pill" id="nextServicePill" title="Próximo culto">
+          <i data-lucide="church"></i>
+          <span id="nextServiceText">Culto Domingo 18h: 85% Confirmados</span>
+        </div>
+
+        <a class="topbar-link" href="../app-publico/ibscn-publico/dist/index.html" target="_blank" rel="noopener" title="Abrir o App Público da igreja">
+          <i data-lucide="external-link"></i><span>Ver App Público</span>
+        </a>
+
+        <button class="icon-btn" onclick="toggleNotifications(event)" title="Notificações">
+          <i data-lucide="bell"></i>
+          <span class="badge" id="notifBadge">3</span>
+        </button>
+
+        <div class="dropdown-anchor">
+          <button class="btn-primary" onclick="toggleNovaAcao(event)">
+            <i data-lucide="plus"></i> Nova Ação
+          </button>
+          <div class="dropdown" id="novaAcaoMenu">
+            <div class="dropdown-label">Ações rápidas</div>
+            <div class="dropdown-item" data-section="pessoas" onclick="runAction('pessoas',()=>openMemberModal())">
+              <i data-lucide="user-plus"></i> Novo Membro
+            </div>
+            <div class="dropdown-item" data-section="agenda" onclick="runAction('agenda',()=>openEventModal())">
+              <i data-lucide="calendar-plus"></i> Novo Evento / Culto
+            </div>
+            <div class="dropdown-item" data-section="cantina" onclick="runAction('cantina',()=>openProductModal())">
+              <i data-lucide="shopping-cart"></i> Novo Produto (Cantina)
+            </div>
+            <div class="dropdown-item" data-section="avisos" onclick="runAction('avisos',()=>openAnnouncementModal())">
+              <i data-lucide="megaphone"></i> Novo Comunicado
+            </div>
+            <div class="dropdown-item" data-section="escalas" onclick="runAction('escalas',()=>showToast('Módulo de Escalas em construção','warning'))">
+              <i data-lucide="clipboard-plus"></i> Criar Escala
+            </div>
+            <div class="dropdown-item" data-section="tesouraria" data-roles="pastor,tesoureiro" onclick="runAction('tesouraria',()=>showToast('Lançamento financeiro em construção','warning'))">
+              <i data-lucide="wallet"></i> Lançamento Financeiro
+            </div>
+          </div>
+        </div>
+
+        <button class="icon-btn topbar-user" onclick="toggleAccountMenu(event)" title="Minha conta">
+          <i data-lucide="user-round"></i>
+        </button>
+      </div>
+
+      <!-- Notificações dropdown -->
+      <div class="dropdown notif-dropdown" id="notifMenu">
+        <div class="dropdown-head">
+          <span class="dropdown-title">Notificações</span>
+          <button class="link-btn" onclick="markAllRead()">Marcar todas como lidas</button>
+        </div>
+        <div class="dropdown-item notif-item" onclick="runAction('escalas',()=>{})">
+          <div class="notif-icon"><i data-lucide="clipboard-check"></i></div>
+          <div>
+            <div class="notif-title">Escala de domingo pendente</div>
+            <div class="notif-sub">Voluntários aguardando confirmação · há 25 min</div>
+          </div>
+          <span class="notif-dot"></span>
+        </div>
+        <div class="dropdown-item notif-item" onclick="runAction('tesouraria',()=>{})">
+          <div class="notif-icon"><i data-lucide="hand-coins"></i></div>
+          <div>
+            <div class="notif-title">Nova doação registrada</div>
+            <div class="notif-sub">Tesouraria · há 2 horas</div>
+          </div>
+          <span class="notif-dot"></span>
+        </div>
+        <div class="dropdown-item notif-item" onclick="runAction('cantina',()=>{})">
+          <div class="notif-icon"><i data-lucide="store"></i></div>
+          <div>
+            <div class="notif-title">3 novos pedidos na cantina</div>
+            <div class="notif-sub">Cantina Shallom · há 3 horas</div>
+          </div>
+          <span class="notif-dot"></span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Sections -->
+    <div class="content-area">
+
+      <!-- Dashboard Section -->
+      <section class="page-section active" id="section-dashboard">
+
+        <!-- Dash Header -->
+        <div class="dash-header">
+          <div class="dash-header-info">
+            <div class="dash-eyebrow">
+              Sistema de Gest&atilde;o Shallom
+              <i data-lucide="chevron-right"></i>
+              Ecossistema Integrado
+            </div>
+            <h1>Painel Geral dos Aplicativos</h1>
+            <p class="dash-sub">Vis&atilde;o executiva em tempo real: App P&uacute;blico (visitantes, cantina) e App Interno (volunt&aacute;rios, escalas, minist&eacute;rios).</p>
+          </div>
+          <div class="dash-actions">
+            <button class="btn-ghost" onclick="exportWeeklyReport()" title="Baixar CSV com membros, escalas, cantina e avisos">
+              <i data-lucide="download"></i> Exportar Resumo Semanal
+            </button>
+            <button class="btn-primary" onclick="runAction('escalas')">
+              <i data-lucide="plus"></i> Nova Escala no App
+            </button>
+          </div>
+        </div>
+
+        <!-- KPIs -->
+        <div class="kpi-grid">
+          <div class="kpi-card" style="--kpi-accent:#E3EEFB">
+            <div class="kpi-top">
+              <span class="kpi-label">Membros Ativos nos Apps</span>
+              <span class="kpi-icon" style="background:var(--primary-light);color:var(--primary)"><i data-lucide="users"></i></span>
+            </div>
+            <div class="kpi-value">
+              <span id="kpiMembers">0</span>
+              <span class="kpi-delta" id="kpiMembersDelta">&nbsp;</span>
+            </div>
+            <div class="kpi-meta">
+              <span id="kpiMembersSub">&nbsp;</span>
+              <span class="kpi-meta-soft">96% logados</span>
+            </div>
+          </div>
+
+          <div class="kpi-card" style="--kpi-accent:#E7EDFB">
+            <div class="kpi-top">
+              <span class="kpi-label">Confirma&ccedil;&atilde;o de Escalas</span>
+              <span class="kpi-icon" style="background:var(--primary-light);color:var(--primary)"><i data-lucide="clipboard-check"></i></span>
+            </div>
+            <div class="kpi-value">
+              <span id="kpiShifts">0%</span>
+              <span class="kpi-hint" id="kpiShiftsHint">&nbsp;</span>
+            </div>
+            <div class="kpi-bar"><span id="kpiShiftsBar" style="width:0%"></span></div>
+            <div class="kpi-meta">
+              <span id="kpiShiftsSub">&nbsp;</span>
+              <span class="kpi-alert" id="kpiShiftsPend">&nbsp;</span>
+            </div>
+          </div>
+
+          <div class="kpi-card" style="--kpi-accent:#D5F5E6">
+            <div class="kpi-top">
+              <span class="kpi-label">Visitantes (30 Dias)</span>
+              <span class="kpi-icon" style="background:#ECFDF5;color:#059669"><i data-lucide="user-plus"></i></span>
+            </div>
+            <div class="kpi-value">
+              <span id="kpiVisitors">0</span>
+              <span class="kpi-delta kpi-delta-amber" id="kpiVisitorsDelta">&nbsp;</span>
+            </div>
+            <div class="kpi-meta">
+              <span id="kpiVisitorsFoot" class="kpi-foot-dot">&nbsp;</span>
+            </div>
+          </div>
+
+          <div class="kpi-card" style="--kpi-accent:#E7F0FD">
+            <div class="kpi-top">
+              <span class="kpi-label">Cantina Shallom (App)</span>
+              <span class="kpi-icon" style="background:var(--primary-light);color:var(--primary)"><i data-lucide="shopping-bag"></i></span>
+            </div>
+            <div class="kpi-value">
+              <span id="kpiCantina">R$ 0</span><span class="kpi-cents" id="kpiCantinaCents">,00</span>
+            </div>
+            <div class="kpi-meta">
+              <span id="kpiCantinaFoot">&nbsp;</span>
+              <span class="kpi-meta-soft" id="kpiCantinaPill">100% PIX</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Grid: main + side -->
+        <div class="dash-grid">
+          <div class="dash-main">
+
+            <!-- Proximo culto + squads -->
+            <div class="panel">
+              <div class="culto-head">
+                <div class="culto-left">
+                  <span class="culto-ico"><i data-lucide="calendar-days"></i></span>
+                  <div class="culto-info">
+                    <div class="culto-title-row">
+                      <h3 id="nextCultoTitle">Pr&oacute;ximo Culto</h3>
+                      <span class="date-chip" id="nextCultoChip">&nbsp;</span>
+                    </div>
+                    <div class="panel-sub" id="nextCultoSub">&nbsp;</div>
+                  </div>
+                </div>
+                <span class="panel-link" onclick="navigateTo('agenda')">Ver Matriz Completa <i data-lucide="arrow-right"></i></span>
+              </div>
+              <div class="squad-grid" id="squadGrid"></div>
+            </div>
+
+            <!-- Alerta de pendencias -->
+            <div class="alert-panel" id="cultoAlert">
+              <span class="alert-ico"><i data-lucide="triangle-alert"></i></span>
+              <div class="alert-body">
+                <div class="alert-title" id="alertTitle">A&ccedil;&atilde;o Necess&aacute;ria</div>
+                <div class="alert-text" id="alertText">&nbsp;</div>
+                <div class="alert-actions">
+                  <button class="btn-ghost" onclick="runAction('escalas')">
+                    <i data-lucide="arrow-left-right"></i> Resolver Troca
+                  </button>
+                  <button class="btn-alert" onclick="sendShiftReminder()">
+                    <i data-lucide="send"></i> Disparar Push / WhatsApp
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Ultimos avisos -->
+            <div class="panel">
+              <div class="panel-head">
+                <div class="panel-head-left">
+                  <h3>&Uacute;ltimos Avisos Publicados nos Apps</h3>
+                  <div class="panel-sub">Feed de novidades e notifica&ccedil;&otilde;es push recentes</div>
+                </div>
+                <span class="panel-link" onclick="navigateTo('avisos')">Ver Todos <i data-lucide="arrow-right"></i></span>
+              </div>
+              <table class="data-table dash-table">
+                <thead>
+                  <tr>
+                    <th>T&iacute;tulo do Comunicado</th>
+                    <th>P&uacute;blico Alvo</th>
+                    <th>Leituras / Push</th>
+                    <th>Autor</th>
+                    <th>A&ccedil;&atilde;o</th>
+                  </tr>
+                </thead>
+                <tbody id="dashAvisosBody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Side column -->
+          <div class="dash-side">
+
+            <!-- Visitantes -->
+            <div class="panel">
+              <div class="panel-head">
+                <div class="panel-head-left">
+                  <h3 class="panel-title-dot"><span class="pe-dot"></span> Novos Visitantes (Hoje)</h3>
+                </div>
+                <span class="pill pill-green" id="visitorsCount">0 cadastrados</span>
+              </div>
+              <div class="panel-sub visitors-sub">Pessoas que preencheram o cart&atilde;o de boas-vindas no App P&uacute;blico.</div>
+              <div id="visitorsList"></div>
+            </div>
+
+            <!-- Pedidos da cantina -->
+            <div class="panel">
+              <div class="panel-head">
+                <div class="panel-head-left ph-ico">
+                  <span class="q-ico"><i data-lucide="shopping-bag"></i></span>
+                  <h3>Pedidos da Cantina (Hoje)</h3>
+                </div>
+                <span class="live-badge"><span class="live-dot"></span> Ao Vivo</span>
+              </div>
+              <div id="ordersList"></div>
+            </div>
+
+            <!-- Atalhos rapidos -->
+            <div class="panel">
+              <div class="panel-head"><h3>Atalhos R&aacute;pidos de Gest&atilde;o</h3></div>
+              <div class="quick-list">
+                <button class="quick-link" onclick="runAction('escalas')">
+                  <span class="q-ico"><i data-lucide="calendar-plus"></i></span>
+                  Criar Nova Escala de Culto
+                  <i class="q-arrow" data-lucide="chevron-right"></i>
+                </button>
+                <button class="quick-link" onclick="runAction('avisos', () => openAnnouncementModal())">
+                  <span class="q-ico"><i data-lucide="megaphone"></i></span>
+                  Enviar Comunicado Push Geral
+                  <i class="q-arrow" data-lucide="chevron-right"></i>
+                </button>
+                <button class="quick-link" onclick="runAction('cantina', () => openProductModal())">
+                  <span class="q-ico"><i data-lucide="utensils"></i></span>
+                  Cadastrar Card&aacute;pio da Cantina
+                  <i class="q-arrow" data-lucide="chevron-right"></i>
+                </button>
+                <button class="quick-link" onclick="exportWeeklyReport()">
+                  <span class="q-ico"><i data-lucide="file-down"></i></span>
+                  Exportar Escalas e Resumo (CSV)
+                  <i class="q-arrow" data-lucide="chevron-right"></i>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Pessoas Section -->
+      <section class="page-section" id="section-pessoas">
+
+        <!-- Header -->
+        <div class="dash-header">
+          <div class="dash-header-info">
+            <div class="pessoas-eyebrow">
+              <span class="pe-green"><span class="pe-dot"></span> Base Eclesiástica Atualizada</span>
+              <span class="pe-sep">&middot;</span>
+              <span>Ano Pastoral 2026</span>
+            </div>
+            <h1>Gestão de Pessoas &amp; Membros</h1>
+            <p class="dash-sub">Controle eclesiástico unificado: acompanhamento de integração, ministérios ativos e histórico pastoral da Igreja Shallom.</p>
+          </div>
+          <div class="dash-actions">
+            <button class="btn-ghost" onclick="exportPeopleCSV()" title="Baixar CSV dos membros filtrados">
+              <i data-lucide="download"></i> Exportar CSV
+            </button>
+            <button class="btn-ghost" onclick="toggleAdvFilters()" id="advFiltersBtn" title="Filtros avançados de setor e status">
+              <i data-lucide="sliders-horizontal"></i> Filtros Avançados
+            </button>
+            <button class="btn-primary" onclick="openMemberModal()">
+              <i data-lucide="user-plus"></i> Cadastrar Novo Membro
+            </button>
+          </div>
+        </div>
+
+        <!-- KPIs -->
+        <div class="kpi-grid">
+          <div class="kpi-card">
+            <div class="kpi-top">
+              <span class="kpi-label">Total de Membros Ativos</span>
+              <span class="kpi-icon" style="background:var(--primary-light);color:var(--primary)"><i data-lucide="users"></i></span>
+            </div>
+            <div class="kpi-value">
+              <span id="pKpiTotal">0</span>
+              <span class="kpi-delta" id="pKpiTotalDelta">&nbsp;</span>
+            </div>
+            <div class="kpi-meta">
+              <span>Registrados no eclesiástico</span>
+              <span class="kpi-meta-ok" id="pKpiLogin">&nbsp;</span>
+            </div>
+          </div>
+
+          <div class="kpi-card">
+            <div class="kpi-top">
+              <span class="kpi-label">Integração &amp; Batismo</span>
+              <span class="kpi-icon" style="background:var(--primary-light);color:var(--primary)"><i data-lucide="droplets"></i></span>
+            </div>
+            <div class="kpi-value">
+              <span id="pKpiIntegr">0</span>
+              <span class="kpi-delta kpi-delta-blue" id="pKpiIntegrDelta">Novos Convertidos</span>
+            </div>
+            <div class="kpi-bar"><span id="pKpiBatBar" style="width:0%"></span></div>
+            <div class="kpi-meta">
+              <span>Batizados nas águas</span>
+              <span id="pKpiBatizados">&nbsp;</span>
+            </div>
+          </div>
+
+          <div class="kpi-card">
+            <div class="kpi-top">
+              <span class="kpi-label">Voluntários em Ministérios</span>
+              <span class="kpi-icon" style="background:var(--secondary-light);color:var(--secondary)"><i data-lucide="hand-heart"></i></span>
+            </div>
+            <div class="kpi-value">
+              <span id="pKpiVol">0</span>
+              <span class="kpi-delta" id="pKpiVolPct">&nbsp;</span>
+            </div>
+            <div class="kpi-meta">
+              <span>Escalados nesta semana</span>
+              <span id="pKpiEscalados">&nbsp;</span>
+            </div>
+          </div>
+
+          <div class="kpi-card">
+            <div class="kpi-top">
+              <span class="kpi-label">Visitantes Acompanhados</span>
+              <span class="kpi-icon" style="background:#ECFDF5;color:#059669"><i data-lucide="user-check"></i></span>
+            </div>
+            <div class="kpi-value">
+              <span id="pKpiVis">0</span>
+              <span class="kpi-delta" id="pKpiVisPill">Últimos 30 dias</span>
+            </div>
+            <div class="kpi-meta">
+              <span>Taxa de contato ativo</span>
+              <span id="pKpiContact">&nbsp;</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Toolbar -->
+        <div class="people-toolbar">
+          <input type="text" class="search-input ppl-search" placeholder="Buscar por nome, e-mail, ministério, celular..." id="memberSearch" oninput="filterMembers()">
+          <select class="filter-select sort-select" id="peopleSort" onchange="setPeopleSort(this.value)" title="Ordenar lista">
+            <option value="recentes">Ordenar: Mais Recentes</option>
+            <option value="nome">Ordenar: Nome A-Z</option>
+            <option value="assiduidade">Ordenar: Assiduidade</option>
+          </select>
+          <button class="icon-box" onclick="toggleAdvFilters()" title="Filtros avançados"><i data-lucide="list-filter"></i></button>
+        </div>
+
+        <!-- Filtros avançados -->
+        <div class="adv-filters" id="advFilters">
+          <select class="filter-select" id="sectorFilter" onchange="filterMembers()">
+            <option value="">Todos os Setores</option>
+            <option value="Louvor">Louvor</option>
+            <option value="Midia">Mídia</option>
+            <option value="Recepcao">Recepção</option>
+            <option value="Infantil">Infantil</option>
+            <option value="Intercessao">Intercessão</option>
+          </select>
+          <select class="filter-select" id="statusFilter" onchange="filterMembers()">
+            <option value="">Todos os Status</option>
+            <option value="ativo">Ativos</option>
+            <option value="integracao">Em Integração</option>
+            <option value="inativo">Inativos</option>
+          </select>
+        </div>
+
+        <!-- Abas -->
+        <div class="ptabs" id="peopleTabs">
+          <button class="ptab active" data-tab="todos" onclick="setPeopleTab('todos')">Todos <b id="tabTodos">0</b></button>
+          <button class="ptab" data-tab="ativos" onclick="setPeopleTab('ativos')">Membros Ativos <b id="tabAtivos">0</b></button>
+          <button class="ptab" data-tab="integracao" onclick="setPeopleTab('integracao')">Em Integração <b id="tabIntegr">0</b></button>
+          <button class="ptab" data-tab="voluntarios" onclick="setPeopleTab('voluntarios')">Voluntários <b id="tabVol">0</b></button>
+          <button class="ptab" data-tab="lideres" onclick="setPeopleTab('lideres')">Líderes de Setor <b id="tabLideres">0</b></button>
+          <button class="ptab" data-tab="inativos" onclick="setPeopleTab('inativos')">Inativos / Afastados <b id="tabInativos">0</b></button>
+        </div>
+
+        <!-- Grid: tabela + ficha -->
+        <div class="people-grid">
+          <div class="people-table-wrap">
+            <table class="data-table people-table">
+              <thead>
+                <tr>
+                  <th class="col-check"><input type="checkbox" class="pcheck" id="peopleCheckAll" onchange="toggleCheckAll(this.checked)" title="Selecionar todos"></th>
+                  <th>Membro / Contato</th>
+                  <th>Status</th>
+                  <th>Ministérios</th>
+                  <th>Célula</th>
+                  <th>Assiduidade</th>
+                  <th>Ações</th>
+                </tr>
+              </thead>
+              <tbody id="membersTableBody"></tbody>
+            </table>
+            <div class="people-footer">
+              <span id="peopleInfo">Mostrando 0 membros</span>
+              <div class="pager" id="peoplePagination"></div>
+            </div>
+          </div>
+
+          <aside class="panel profile-panel" id="memberProfile"></aside>
+        </div>
+      </section>
+
+      <!-- Setores Section -->
+      <section class="page-section" id="section-setores">
+
+        <!-- Header -->
+        <div class="dash-header">
+          <div class="dash-header-info">
+            <div class="pessoas-eyebrow">
+              <span class="pe-green"><span class="pe-dot"></span> Estrutura Eclesiástica</span>
+              <span class="pe-sep">&middot;</span>
+              <span>Ano Pastoral 2026</span>
+            </div>
+            <h1>Setores &amp; Ministérios</h1>
+            <p class="dash-sub">Mapa completo dos departamentos da Igreja Shallom: voluntários, cobertura ministerial, prontidão operacional e saúde das lideranças.</p>
+          </div>
+          <div class="dash-actions">
+            <select class="filter-select" id="campusSelect" title="Campus">
+              <option>Campus Principal (Sede)</option>
+              <option>Campus Zona Norte</option>
+            </select>
+            <button class="btn-primary" onclick="manageDept(null)">
+              <i data-lucide="plus"></i> Novo Setor ou Ministério
+            </button>
+          </div>
+        </div>
+
+        <!-- KPIs -->
+        <div class="kpi-grid">
+          <div class="kpi-card">
+            <div class="kpi-top">
+              <span class="kpi-label">Total de Setores Ativos</span>
+              <span class="kpi-icon" style="background:var(--primary-light);color:var(--primary)"><i data-lucide="layout-grid"></i></span>
+            </div>
+            <div class="kpi-value">
+              <span id="sKpiTotal">0</span>
+              <span class="kpi-delta kpi-delta-blue" id="sKpiTotalPct">&nbsp;</span>
+            </div>
+            <div class="kpi-bar"><span id="sKpiTotalBar" style="width:0%"></span></div>
+            <div class="kpi-meta">
+              <span>Departamentos cadastrados</span>
+              <span class="kpi-meta-ok" id="sKpiAtivos">&nbsp;</span>
+            </div>
+          </div>
+
+          <div class="kpi-card">
+            <div class="kpi-top">
+              <span class="kpi-label">Voluntários Mobilizados</span>
+              <span class="kpi-icon" style="background:var(--secondary-light);color:var(--secondary)"><i data-lucide="hand-heart"></i></span>
+            </div>
+            <div class="kpi-value">
+              <span id="sKpiVol">0</span>
+              <span class="kpi-delta" id="sKpiVolPct">&nbsp;</span>
+            </div>
+            <div class="kpi-meta">
+              <span>Do corpo total de 1.260</span>
+              <span id="sKpiVolNovos">&nbsp;</span>
+            </div>
+          </div>
+
+          <div class="kpi-card">
+            <div class="kpi-top">
+              <span class="kpi-label">Taxa de Cobertura</span>
+              <span class="kpi-icon" style="background:#ECFDF5;color:#059669"><i data-lucide="shield-check"></i></span>
+            </div>
+            <div class="kpi-value">
+              <span id="sKpiCobertura">0%</span>
+              <span class="kpi-delta" id="sKpiCoberturaDelta">&nbsp;</span>
+            </div>
+            <div class="kpi-bar"><span id="sKpiCoberturaBar" style="width:0%"></span></div>
+            <div class="kpi-meta">
+              <span>Vagas preenchidas nas escalas</span>
+              <span id="sKpiCoberturaMeta">&nbsp;</span>
+            </div>
+          </div>
+
+          <div class="kpi-card">
+            <div class="kpi-top">
+              <span class="kpi-label">Lideranças Cadastradas</span>
+              <span class="kpi-icon" style="background:#FEF3C7;color:#D97706"><i data-lucide="crown"></i></span>
+            </div>
+            <div class="kpi-value">
+              <span id="sKpiLider">0</span>
+              <span class="kpi-delta" id="sKpiLiderPct">&nbsp;</span>
+            </div>
+            <div class="kpi-meta">
+              <span>Líderes e coordenadores ativos</span>
+              <span id="sKpiLiderMeta">&nbsp;</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Departamentos -->
+        <div class="panel dept-panel">
+          <div class="dept-head">
+            <div class="dept-head-left">
+              <h3>Departamentos Eclesiásticos</h3>
+              <span class="dept-badge" id="deptBadge">12 Principais</span>
+            </div>
+            <div class="dept-tabs" id="deptTabs">
+              <button class="dept-tab active" data-tab="todos" onclick="setDeptTab('todos')">Todos <b id="deptTabTodos">0</b></button>
+              <button class="dept-tab" data-tab="cultos" onclick="setDeptTab('cultos')">Cultos &amp; Liturgia</button>
+              <button class="dept-tab" data-tab="pastoral" onclick="setDeptTab('pastoral')">Pastoral &amp; Cuidado</button>
+              <button class="dept-tab" data-tab="operacoes" onclick="setDeptTab('operacoes')">Operações</button>
+            </div>
+          </div>
+          <div class="dept-grid" id="deptGrid"></div>
+        </div>
+
+        <!-- Atribuição e Saúde -->
+        <div class="saude-grid">
+          <div class="panel saude-panel">
+            <div class="dept-head">
+              <div class="dept-head-left">
+                <h3>Atribuição e Saúde Ministerial</h3>
+                <span class="dept-badge dept-badge-blue">Top 5 Prontidão</span>
+              </div>
+            </div>
+            <div id="saudeList"></div>
+            <div class="saude-foot">
+              <span>Relatório gerado a partir das escalas dos últimos 90 dias.</span>
+              <button class="btn-ghost btn-sm" onclick="showToast('Resumo executivo exportado','success')"><i data-lucide="download"></i> Baixar Resumo Executivo</button>
+            </div>
+          </div>
+
+          <div class="panel alerta-panel">
+            <div class="alerta-head">
+              <span class="alerta-pill" id="alertaCount">3 voluntários em risco de sobrecarga</span>
+              <h3><i data-lucide="triangle-alert"></i> Alerta de SobreCarga Ministerial</h3>
+            </div>
+            <div id="sobrecargaList"></div>
+            <button class="btn-primary btn-block" onclick="showToast('Abrindo ajuste de escalas...','info')"><i data-lucide="calendar-check"></i> Ajustar Escalas</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Escalas Section -->
+      <section class="page-section" id="section-escalas">
+        <div id="escalasBody"></div>
+      </section>
+
+      <!-- Agenda Section -->
+      <section class="page-section" id="section-agenda">
+        <div class="section-header">
+          <h2>Agenda &amp; Cultos</h2>
+          <button class="btn-primary" onclick="openEventModal()">
+            <span class="material-symbols-outlined">add</span> Novo Evento
+          </button>
+        </div>
+        <div class="table-container">
+          <table class="data-table" id="eventsTable">
+            <thead>
+              <tr>
+                <th>Nome</th>
+                <th>Data</th>
+                <th>Horario</th>
+                <th>Local</th>
+                <th>Status</th>
+                <th>Acoes</th>
+              </tr>
+            </thead>
+            <tbody id="eventsTableBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Avisos Section -->
+      <section class="page-section" id="section-avisos">
+        <div class="section-header">
+          <h2>Avisos &amp; Comunicados</h2>
+          <button class="btn-primary" onclick="openAnnouncementModal()">
+            <span class="material-symbols-outlined">add</span> Novo Comunicado
+          </button>
+        </div>
+        <div class="announcements-list" id="announcementsList"></div>
+      </section>
+
+      <!-- App Publico Section -->
+      <section class="page-section" id="section-app-publico">
+        <div class="section-header">
+          <h2>App Público</h2>
+          <a class="btn-primary" href="../app-publico/ibscn-publico/dist/index.html" target="_blank" rel="noopener">
+            <span class="material-symbols-outlined">open_in_new</span> Abrir App Público
+          </a>
+        </div>
+        <div class="empty-state">
+          <i data-lucide="smartphone"></i>
+          <p>O App Público está no ar — eventos, cantina, oração e visitantes para a comunidade.</p>
+        </div>
+      </section>
+
+      <!-- Cantina Section -->
+      <section class="page-section" id="section-cantina">
+        <div class="section-header">
+          <h2>Cantina Shallom</h2>
+          <div class="header-actions">
+            <div class="cantina-status-card" id="cantinaStatusCard">
+              <span class="status-pill status-open" id="cantinaStatusPill"><span class="status-dot"></span>Aberta</span>
+              <button class="btn-secondary btn-sm" onclick="toggleCantinaStatus()">Alterar status</button>
+            </div>
+            <button class="btn-primary" onclick="openProductModal()">
+              <span class="material-symbols-outlined">add_shopping_cart</span> Novo Produto
+            </button>
+          </div>
+        </div>
+        <div class="filter-bar">
+          <input type="text" class="search-input" placeholder="Buscar produto..." id="productSearch" oninput="filterProducts()">
+          <select class="filter-select" id="categoryFilter" onchange="filterProducts()">
+            <option value="">Todas as Categorias</option>
+            <option value="Bebidas">Bebidas</option>
+            <option value="Lanches">Lanches</option>
+            <option value="Doces">Doces</option>
+            <option value="Salgados">Salgados</option>
+          </select>
+        </div>
+        <div class="products-grid" id="productsGrid"></div>
+      </section>
+
+      <!-- Tesouraria Section -->
+      <section class="page-section" id="section-tesouraria">
+        <div class="section-header">
+          <h2>Tesouraria &amp; Dízimos</h2>
+          <button class="btn-primary" onclick="showToast('Lançamento financeiro em construção','warning')">
+            <span class="material-symbols-outlined">add</span> Novo Lançamento
+          </button>
+        </div>
+        <div class="empty-state">
+          <i data-lucide="wallet"></i>
+          <p>Dízimos, ofertas e entradas/saídas — tela em construção. <br>Acesso restrito a Pastor e Tesoureiro.</p>
+        </div>
+      </section>
+
+      <!-- Relatorios Section -->
+      <section class="page-section" id="section-relatorios">
+        <div class="section-header">
+          <h2>Relatórios &amp; Métricas</h2>
+        </div>
+        <div class="empty-state">
+          <i data-lucide="bar-chart-3"></i>
+          <p>Relatórios de presença, finanças e ministérios — tela em construção.</p>
+        </div>
+      </section>
+
+      <!-- Configuracoes Section -->
+      <section class="page-section" id="section-configuracoes">
+        <div class="section-header">
+          <h2>Configurações</h2>
+        </div>
+        <div class="settings-grid">
+          <div class="settings-card">
+            <div class="settings-card-header">
+              <span class="material-symbols-outlined">church</span>
+              <h3>Informacoes da Igreja</h3>
+            </div>
+            <div class="form-group">
+              <label>Nome da Igreja</label>
+              <input type="text" id="churchName" value="Igreja Shallom">
+            </div>
+            <div class="form-group">
+              <label>Endereco</label>
+              <input type="text" id="churchAddress" value="Rua Exemplo, 123 - Centro">
+            </div>
+            <div class="form-group">
+              <label>Telefone</label>
+              <input type="text" id="churchPhone" value="(11) 99999-0000">
+            </div>
+            <div class="form-group">
+              <label>Email</label>
+              <input type="email" id="churchEmail" value="contato@batistashallom.com">
+            </div>
+          </div>
+          <div class="settings-card">
+            <div class="settings-card-header">
+              <span class="material-symbols-outlined">palette</span>
+              <h3>Aparencia do App</h3>
+            </div>
+            <div class="form-group">
+              <label>Cor Primaria</label>
+              <div class="color-input-wrap">
+                <input type="color" id="appPrimaryColor" value="#103B5F">
+                <span id="appPrimaryHex">#103B5F</span>
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Cor Secundaria</label>
+              <div class="color-input-wrap">
+                <input type="color" id="appSecondaryColor" value="#16A2AD">
+                <span id="appSecondaryHex">#16A2AD</span>
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Texto de Boas-vindas</label>
+              <input type="text" id="welcomeText" value="Bem-vindo a Igreja Shallom!">
+            </div>
+          </div>
+          <div class="settings-card">
+            <div class="settings-card-header">
+              <span class="material-symbols-outlined">notifications_active</span>
+              <h3>Notificacoes</h3>
+            </div>
+            <div class="toggle-group">
+              <label class="toggle-label">
+                <span>Notificar novos membros</span>
+                <input type="checkbox" class="toggle-input" checked>
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+            <div class="toggle-group">
+              <label class="toggle-label">
+                <span>Notificar eventos</span>
+                <input type="checkbox" class="toggle-input" checked>
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+            <div class="toggle-group">
+              <label class="toggle-label">
+                <span>Notificar comunicados</span>
+                <input type="checkbox" class="toggle-input">
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+          </div>
+        </div>
+        <div style="margin-top:24px">
+          <button class="btn-primary" onclick="saveSettings()">
+            <span class="material-symbols-outlined">save</span> Salvar Configuracoes
+          </button>
+        </div>
+      </section>
+
+    </div>
+  </main>
+
+  <!-- Conta (usado pela sidebar e pela topbar) -->
+  <div class="dropdown account-dropdown" id="accountMenu">
+    <div class="account-head">
+      <div class="user-avatar" id="menuAvatar">TM</div>
+      <div class="user-info">
+        <span class="user-name" id="menuName">Pr. Thiago Martins</span>
+        <span class="user-role" id="menuRole">Pastor</span>
+      </div>
+    </div>
+    <div class="dropdown-item" onclick="accountGo('configuracoes')">
+      <i data-lucide="user-round"></i> Minha Conta
+    </div>
+    <div class="dropdown-item" onclick="toggleTheme();closeDropdowns()">
+      <i data-lucide="moon"></i> Alternar tema
+    </div>
+    <div class="dropdown-item item-danger" onclick="logout()">
+      <i data-lucide="log-out"></i> Sair da conta
+    </div>
+  </div>
+
+  <!-- Modal Overlay -->
+  <div class="modal-overlay" id="modalOverlay" onclick="closeModal()">
+    <div class="modal" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <h3 id="modalTitle">Modal</h3>
+        <button class="modal-close" onclick="closeModal()">
+          <span class="material-symbols-outlined">close</span>
+        </button>
+      </div>
+      <div class="modal-body" id="modalBody"></div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <script src="js/lucide.min.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

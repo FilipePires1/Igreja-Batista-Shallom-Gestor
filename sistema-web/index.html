@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Igreja Shallom - Admin Workspace</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet">
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    html{zoom:0.9}
+    body{font-family:'Inter',sans-serif;background:#F1F5F9;display:flex;align-items:center;justify-content:center;min-height:100vh;color:#141B2B}
+    .login-container{width:100%;max-width:420px;padding:24px}
+    .login-card{background:#fff;border-radius:16px;padding:40px 32px;box-shadow:0 4px 24px rgba(16,59,95,0.10)}
+    .login-header{text-align:center;margin-bottom:32px}
+    .login-logo{width:72px;height:72px;border-radius:18px;overflow:hidden;margin:0 auto 16px;box-shadow:0 6px 20px rgba(16,59,95,0.25)}
+    .login-logo img{width:100%;height:100%;object-fit:cover}
+    .login-header h1{font-size:20px;font-weight:500;margin-bottom:4px}
+    .login-header p{font-size:14px;color:#103B5F;font-weight:500}
+    .form-group{margin-bottom:20px}
+    .form-group label{display:block;font-size:13px;font-weight:500;color:#464555;margin-bottom:6px}
+    .form-group input{width:100%;padding:12px 16px;border:1px solid #E8EDF3;background:#F9FAFB;border-radius:8px;font-family:'Inter',sans-serif;font-size:14px;color:#141B2B;transition:background .2s,border-color .2s}
+    .form-group input:focus{outline:none;border-color:#103B5F;background:#fff}
+    .form-group input::placeholder{color:#777587}
+    .login-btn{width:100%;padding:12px;background:#103B5F;color:#fff;border:none;border-radius:8px;font-family:'Inter',sans-serif;font-size:14px;font-weight:500;cursor:pointer;transition:background .2s;margin-top:8px}
+    .login-btn:hover{background:#0B2B47}
+    .login-footer{text-align:center;margin-top:24px}
+    .login-footer p{font-size:12px;color:#777587}
+    .dev-credit{display:flex;flex-direction:column;align-items:center;gap:6px;margin-bottom:8px}
+    .dev-label{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#777587}
+    .dev-brand{display:inline-flex;align-items:center;gap:8px;text-decoration:none}
+    .dev-brand img{width:26px;height:26px;border-radius:7px;box-shadow:0 2px 8px rgba(16,59,95,.25)}
+    .dev-brand b{font-size:13px;font-weight:500;color:#103B5F;transition:color .2s}
+    .dev-brand:hover b{color:#16A2AD}
+    .error-msg{background:#FEF2F2;color:#DC2626;font-size:13px;padding:10px 14px;border-radius:8px;margin-bottom:16px;display:none;font-weight:400}
+  </style>
+</head>
+<body>
+  <div class="login-container">
+    <div class="login-card">
+      <div class="login-header">
+        <div class="login-logo">
+          <img src="assets/logo-azul.png" alt="Logo">
+        </div>
+        <h1>Igreja Shallom</h1>
+        <p>Admin Workspace</p>
+      </div>
+      <div class="error-msg" id="errorMsg">Credenciais inválidas. Tente novamente.</div>
+      <form id="loginForm" onsubmit="handleLogin(event)">
+        <div class="form-group">
+          <label>Email</label>
+          <input type="email" id="email" placeholder="seu@email.com" required>
+        </div>
+        <div class="form-group">
+          <label>Senha</label>
+          <input type="password" id="password" placeholder="Digite sua senha" required>
+        </div>
+        <button type="submit" class="login-btn">Entrar</button>
+      </form>
+      <div class="login-footer">
+        <div class="dev-credit">
+          <span class="dev-label">Desenvolvido por</span>
+          <a class="dev-brand" href="https://nextepsolutions.com.br" target="_blank" rel="noopener noreferrer" aria-label="Nextep Solutions — abrir site oficial">
+            <img src="assets/logo-azul.png" alt="Nextep Solutions">
+            <b>Nextep Solutions</b>
+          </a>
+        </div>
+        <p>Versão 1.0.0</p>
+      </div>
+    </div>
+  </div>
+  <script>
+    const API_BASES = ['/api'];
+
+    // Mapeia roles do banco → role web (define ROLE_ACCESS)
+    function mapApiRole(roles) {
+      const names = (roles || []).map(r => r.name);
+      if (names.includes('SUPER_ADMIN')) return { role: 'admin', label: 'Admin Master' };
+      if (names.includes('PASTOR')) return { role: 'pastor', label: 'Pastor' };
+      if (names.includes('PRESBITERO')) return { role: 'presbitero', label: 'Presbítero' };
+      if (names.includes('LIDER')) return { role: 'lider', label: 'Líder' };
+      if (names.includes('COORDENADOR')) return { role: 'coordenador', label: 'Coordenador' };
+      return { role: 'membro', label: 'Membro' };
+    }
+
+    async function loginViaApi(email, pass) {
+      for (const base of API_BASES) {
+        try {
+          const ctrl = new AbortController();
+          const timer = setTimeout(() => ctrl.abort(), 3000);
+          const r = await fetch(base + '/auth/login', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password: pass }), signal: ctrl.signal,
+          });
+          clearTimeout(timer);
+          if (!r.ok) return null;
+          const data = await r.json();
+          const mapped = mapApiRole(data.user.roles);
+          return {
+            email: data.user.email, name: data.user.name, initials: initialsOf(data.user.name),
+            role: mapped.role, roleLabel: mapped.label,
+            id: data.user.id, apiRoles: (data.user.roles || []).map(r => r.name),
+          };
+        } catch (e) { /* tenta próximo base */ }
+      }
+      return null;
+    }
+
+    function initialsOf(name) {
+      return (name || '?').split(' ').filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join('');
+    }
+
+    async function handleLogin(e){
+      e.preventDefault();
+      const email = document.getElementById('email').value.trim().toLowerCase();
+      const pass = document.getElementById('password').value;
+      const apiUser = await loginViaApi(email, pass);
+      if (apiUser) {
+        localStorage.setItem('loggedIn', 'true');
+        localStorage.setItem('adminUser', JSON.stringify(apiUser));
+        window.location.href = 'dashboard.html';
+        return;
+      }
+      document.getElementById('errorMsg').style.display = 'block';
+    }
+    if (localStorage.getItem('loggedIn') === 'true' && localStorage.getItem('adminUser')) {
+      window.location.href = 'dashboard.html';
+    }
+  </script>
+</body>
+</html>

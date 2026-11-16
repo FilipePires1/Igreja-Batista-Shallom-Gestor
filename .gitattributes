@@ -1,0 +1,9 @@
+# Normaliza textos; scripts e arquivos de infraestrutura sempre com LF
+* text=auto
+
+*.sh text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.conf text eol=lf
+Dockerfile text eol=lf
+*.Dockerfile text eol=lf

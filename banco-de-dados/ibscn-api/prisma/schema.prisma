@@ -1,0 +1,586 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Person {
+  id            String  @id @default(cuid())
+  name          String
+  preferredName String?
+  photoUrl      String?
+  phone         String
+  whatsapp      String?
+  email         String?
+  cpf           String? @unique
+  birthdate     String?
+  address       String?
+  city          String?
+  state         String?
+  status        String  @default("ACTIVE")
+  memberSince   String?
+  baptismDate   String?
+  baptismWaters String?
+  howFound      String?
+  pastoralNotes String?
+  wantsContact  Boolean @default(false)
+  acceptsNews   Boolean @default(true)
+  createdAt     String  @default("")
+  updatedAt     String  @default("")
+  createdById   String?
+
+  user            User?
+  visitorRecord   Visitor?
+  sectorMembers   SectorMember[]
+  groupMembers    GroupMember[]
+  scheduleMembers ScheduleMember[]
+  prayerRequests  PrayerRequest[]
+  transactions    Transaction[]
+  attendances     Attendance[]
+  rsvps           EventRsvp[]
+}
+
+model User {
+  id               String  @id @default(cuid())
+  personId         String? @unique
+  email            String  @unique
+  cpf              String?
+  passwordHash     String
+  status           String  @default("PENDING")
+  failedLoginCount Int     @default(0)
+  lastLoginAt      String?
+  biometricEnabled Boolean @default(false)
+  memberCode       String? @unique
+  createdAt        String  @default("")
+  updatedAt        String  @default("")
+
+  person            Person?            @relation(fields: [personId], references: [id])
+  roles             UserRole[]
+  sectorRoles       SectorMember[]
+  ledSectors        Sector[]           @relation("SectorLeader")
+  scheduleMembers   ScheduleMember[]
+  pushTokens        PushToken[]
+  notifications     Notification[]
+  auditLogs         AuditLog[]
+  availability      Availability[]
+  savedFiles        SavedFile[]
+  announcements     Announcement[]
+  announcementReads AnnouncementRead[]
+}
+
+model Role {
+  id          String  @id @default(cuid())
+  name        String  @unique
+  label       String
+  level       Int
+  description String?
+  color       String?
+
+  userRoles     UserRole[]
+  permissions   Permission[]
+  sectorMembers SectorMember[]
+}
+
+model UserRole {
+  id          String  @id @default(cuid())
+  userId      String
+  roleId      String
+  grantedById String?
+  grantedAt   String  @default("")
+
+  user User @relation(fields: [userId], references: [id])
+  role Role @relation(fields: [roleId], references: [id])
+
+  @@unique([userId, roleId])
+}
+
+model Sector {
+  id           String  @id @default(cuid())
+  name         String  @unique
+  label        String
+  icon         String
+  description  String?
+  color        String
+  isActive     Boolean @default(true)
+  isRestricted Boolean @default(false)
+  order        Int
+  templateKey  String  @default("base")
+
+  leaderName    String?
+  leaderUserId  String?
+  capacity      Int     @default(0)
+  scheduleText  String?
+  highlightText String?
+  readiness     Int     @default(100)
+  groupTag      String  @default("operacoes")
+  isLive        Boolean @default(false)
+
+  leader        User?           @relation("SectorLeader", fields: [leaderUserId], references: [id])
+  members       SectorMember[]
+  schedules     Schedule[]
+  announcements Announcement[]
+  tasks         Task[]
+  permissions   Permission[]
+}
+
+model SectorMember {
+  id        String  @id @default(cuid())
+  userId    String
+  personId  String?
+  sectorId  String
+  roleId    String
+  status    String  @default("ACTIVE")
+  joinedAt  String  @default("")
+  addedById String
+
+  user   User    @relation(fields: [userId], references: [id])
+  person Person? @relation(fields: [personId], references: [id])
+  sector Sector  @relation(fields: [sectorId], references: [id])
+  role   Role    @relation(fields: [roleId], references: [id])
+
+  @@unique([userId, sectorId])
+}
+
+model Event {
+  id            String  @id @default(cuid())
+  title         String
+  description   String?
+  type          String
+  subtype       String?
+  isPublic      Boolean @default(false)
+  bannerUrl     String?
+  date          String
+  timeStart     String
+  timeEnd       String?
+  location      String?
+  address       String?
+  mapsUrl       String?
+  liveUrl       String?
+  capacity      Int?
+  sectorId      String?
+  responsibleId String?
+  liturgicCycle String?
+  status        String  @default("SCHEDULED")
+  tags          String  @default("[]")
+  createdById   String
+  createdAt     String  @default("")
+  updatedAt     String  @default("")
+
+  schedules   Schedule[]
+  rsvps       EventRsvp[]
+  attendances Attendance[]
+}
+
+model EventRsvp {
+  id            String @id @default(cuid())
+  eventId       String
+  personId      String?
+  name          String
+  phone         String?
+  adultsCount   Int    @default(1)
+  childrenCount Int    @default(0)
+  totalCount    Int
+  source        String
+  createdAt     String @default("")
+
+  event  Event   @relation(fields: [eventId], references: [id])
+  person Person? @relation(fields: [personId], references: [id])
+}
+
+model Schedule {
+  id             String @id @default(cuid())
+  title          String
+  sectorId       String
+  eventId        String?
+  date           String
+  timeStart      String
+  timeEnd        String?
+  location       String?
+  arrivalTime    String?
+  notes          String?
+  status         String @default("DRAFT")
+  totalPositions Int    @default(0)
+  confirmedCount Int    @default(0)
+  pendingCount   Int    @default(0)
+  cycleLabel     String?
+  createdById    String
+  createdAt      String @default("")
+  updatedAt      String @default("")
+
+  sector  Sector           @relation(fields: [sectorId], references: [id])
+  event   Event?           @relation(fields: [eventId], references: [id])
+  members ScheduleMember[]
+}
+
+model ScheduleMember {
+  id             String  @id @default(cuid())
+  scheduleId     String
+  userId         String?
+  personId       String?
+  roleInSchedule String
+  technicalNotes String?
+  leaderNotes    String?
+  arrivalTime    String?
+  status         String @default("PENDING")
+  tradeReason    String?
+  respondedAt    String?
+  substituteFor  String?
+  monthlyCount   Int    @default(0)
+  createdAt      String @default("")
+
+  schedule Schedule @relation(fields: [scheduleId], references: [id])
+  user     User?    @relation(fields: [userId], references: [id])
+  person   Person?  @relation(fields: [personId], references: [id])
+
+  @@unique([scheduleId, userId])
+}
+
+model Availability {
+  id        String @id @default(cuid())
+  userId    String
+  dateStart String
+  dateEnd   String
+  reason    String?
+  createdAt String @default("")
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model Announcement {
+  id          String  @id @default(cuid())
+  title       String
+  body        String
+  type        String
+  sectorId    String?
+  targetRoles String  @default("[]")
+  isPinned    Boolean @default(false)
+  isUrgent    Boolean @default(false)
+  attachments String  @default("[]")
+  externalUrl String?
+  publishedAt String  @default("")
+  expiresAt   String?
+  readCount   Int     @default(0)
+  pushSent    Boolean @default(false)
+  createdById String
+  createdAt   String  @default("")
+
+  sector    Sector?             @relation(fields: [sectorId], references: [id])
+  createdBy User                @relation(fields: [createdById], references: [id])
+  reads     AnnouncementRead[]
+}
+
+model AnnouncementRead {
+  id             String @id @default(cuid())
+  announcementId String
+  userId         String
+  readAt         String @default("")
+
+  announcement Announcement @relation(fields: [announcementId], references: [id])
+  user         User         @relation(fields: [userId], references: [id])
+
+  @@unique([announcementId, userId])
+}
+
+model Task {
+  id           String @id @default(cuid())
+  title        String
+  description  String?
+  sectorId     String
+  assignedToId String
+  assignedById String
+  dueDate      String?
+  dueTime      String?
+  status       String @default("PENDING")
+  priority     String @default("MEDIUM")
+  createdAt    String @default("")
+  updatedAt    String @default("")
+
+  sector Sector @relation(fields: [sectorId], references: [id])
+}
+
+model Visitor {
+  id              String @id @default(cuid())
+  personId        String @unique
+  howFound        String?
+  prayerRequest   String?
+  wantsContact    Boolean @default(false)
+  wantsMembership Boolean @default(false)
+  status          String  @default("NEW")
+  convertedToId   String?
+  responsibleId   String?
+  createdAt       String  @default("")
+  lastContactAt   String?
+
+  person         Person         @relation(fields: [personId], references: [id])
+  contactHistory ContactEntry[]
+}
+
+model ContactEntry {
+  id          String @id @default(cuid())
+  visitorId   String
+  note        String
+  via         String
+  createdById String
+  createdAt   String @default("")
+
+  visitor Visitor @relation(fields: [visitorId], references: [id])
+}
+
+model Group {
+  id          String  @id @default(cuid())
+  name        String
+  type        String
+  leaderId    String
+  coLeaderId  String?
+  description String?
+  meetingDay  String
+  meetingTime String
+  location    String?
+  address     String?
+  isActive    Boolean @default(true)
+  maxMembers  Int?
+
+  members GroupMember[]
+}
+
+model GroupMember {
+  id       String @id @default(cuid())
+  groupId  String
+  personId String
+  role     String
+  joinedAt String @default("")
+
+  group  Group  @relation(fields: [groupId], references: [id])
+  person Person @relation(fields: [personId], references: [id])
+
+  @@unique([groupId, personId])
+}
+
+model Notification {
+  id            String @id @default(cuid())
+  userId        String
+  title         String
+  body          String
+  type          String
+  referenceType String?
+  referenceId   String?
+  deepLink      String?
+  readAt        String?
+  createdAt     String @default("")
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model PushToken {
+  id        String @id @default(cuid())
+  userId    String
+  token     String
+  platform  String
+  updatedAt String @default("")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([userId, platform])
+}
+
+model CanteenProduct {
+  id          String  @id @default(cuid())
+  name        String
+  description String?
+  imageUrl    String?
+  price       Float
+  category    String
+  isAvailable Boolean @default(true)
+  isFeatured  Boolean @default(false)
+  order       Int     @default(0)
+
+  orderItems OrderItem[]
+}
+
+model CanteenSettings {
+  id           String  @id @default(cuid())
+  isOpen       Boolean @default(false)
+  openTime     String?
+  closeTime    String?
+  autoSchedule Boolean @default(false)
+  updatedAt    String  @default("")
+}
+
+model Order {
+  id            String @id @default(cuid())
+  orderNumber   Int    @default(0)
+  personId      String?
+  customerName  String?
+  total         Float
+  status        String @default("PENDING")
+  paymentMethod String
+  paymentStatus String @default("PENDING")
+  notes         String?
+  createdAt     String @default("")
+  updatedAt     String @default("")
+
+  items OrderItem[]
+}
+
+model OrderItem {
+  id        String  @id @default(cuid())
+  orderId   String
+  productId String
+  quantity  Int
+  unitPrice Float
+  subtotal  Float
+
+  order   Order           @relation(fields: [orderId], references: [id])
+  product CanteenProduct  @relation(fields: [productId], references: [id])
+}
+
+model Transaction {
+  id             String @id @default(cuid())
+  txCode         String @unique
+  type           String
+  category       String
+  amount         Float
+  description    String
+  referenceDate  String
+  paymentMethod  String
+  personId       String?
+  personName     String?
+  attachments    String @default("[]")
+  registeredById String
+  createdAt      String @default("")
+
+  person Person? @relation(fields: [personId], references: [id])
+}
+
+model Budget {
+  id            String  @id @default(cuid())
+  sectorId      String?
+  category      String
+  month         Int
+  year          Int
+  plannedAmount Float
+  notes         String?
+
+  @@unique([category, month, year])
+}
+
+model Attendance {
+  id          String @id @default(cuid())
+  eventId     String
+  personId    String?
+  checkedInAt String @default("")
+  method      String
+
+  event  Event   @relation(fields: [eventId], references: [id])
+  person Person? @relation(fields: [personId], references: [id])
+}
+
+model PrayerRequest {
+  id             String  @id @default(cuid())
+  personId       String?
+  name           String
+  request        String
+  isConfidential Boolean @default(true)
+  status         String  @default("RECEIVED")
+  responsibleId  String?
+  createdAt      String  @default("")
+
+  person Person? @relation(fields: [personId], references: [id])
+}
+
+model SavedFile {
+  id            String @id @default(cuid())
+  name          String
+  url           String
+  mimeType      String
+  sizeBytes     Int
+  sectorId      String?
+  referenceType String?
+  referenceId   String?
+  isRestricted  Boolean @default(false)
+  uploadedById  String
+  createdAt     String @default("")
+
+  uploadedBy User @relation(fields: [uploadedById], references: [id])
+}
+
+model ChurchSettings {
+  id           String  @id @default(cuid())
+  name         String  @default("Igreja Batista Shallom Cidade Nobre")
+  shortName    String  @default("IBSCN")
+  logoUrl      String?
+  address      String?
+  mapsUrl      String?
+  phone        String?
+  whatsapp     String?
+  email        String?
+  instagram    String?
+  youtube      String?
+  spotify      String?
+  pixKey       String?
+  pixCnpj      String?
+  pixBankName  String?
+  scheduleJson String?
+  aboutText    String?
+  missionText  String?
+  updatedAt    String  @default("")
+}
+
+model AppSection {
+  id        String  @id @default(cuid())
+  key       String  @unique
+  title     String?
+  subtitle  String?
+  isVisible Boolean @default(true)
+  order     Int
+  config    String?
+  updatedAt String  @default("")
+}
+
+model AppBanner {
+  id          String  @id @default(cuid())
+  title       String
+  subtitle    String?
+  imageUrl    String?
+  ctaLabel    String?
+  ctaAction   String?
+  ctaValue    String?
+  section     String
+  isActive    Boolean @default(true)
+  order       Int
+  startsAt    String?
+  endsAt      String?
+  createdById String
+  createdAt   String  @default("")
+}
+
+model Permission {
+  id       String  @id @default(cuid())
+  sectorId String?
+  roleId   String
+  action   String
+  granted  Boolean @default(true)
+
+  sector Sector? @relation(fields: [sectorId], references: [id])
+  role   Role    @relation(fields: [roleId], references: [id])
+
+  @@unique([sectorId, roleId, action])
+}
+
+model AuditLog {
+  id         String @id @default(cuid())
+  userId     String
+  action     String
+  module     String
+  recordType String?
+  recordId   String?
+  beforeData String?
+  afterData  String?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  String @default("")
+
+  user User @relation(fields: [userId], references: [id])
+}

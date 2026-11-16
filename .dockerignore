@@ -1,0 +1,19 @@
+# Dependências e artefatos de build
+**/node_modules
+**/dist
+**/.expo
+**/coverage
+
+# Segredos e dados
+**/.env
+**/.env.*
+!**/.env.example
+**/*.db
+**/*.sqlite
+**/*.sqlite3
+**/*.bak
+
+# Repositórios aninhados e materiais locais
+**/.git
+Arquivos
+referencia
