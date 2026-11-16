@@ -29,16 +29,22 @@ Credenciais são entregues fora do repositório e nunca devem ser commitadas.
 
 ## Desenvolvimento local
 
+Guia completo: [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).  
+Rotas da API: [`docs/API.md`](docs/API.md).
+
 ### API
 
 ```bash
 cd banco-de-dados/ibscn-api
+cp .env.example .env
 npm ci
-npx prisma generate --config prisma7.config.ts
+npm run prisma:generate
+npm run migrate:dev
+npm run seed:dev
 npm run start:dev
 ```
 
-A API usa SQLite em `DATABASE_URL` (veja `.env.example` em `deploy/`). As migrations rodam no start do container.
+A API usa SQLite em `DATABASE_URL`/`DATABASE_PATH`. As migrations rodam no start do container de deploy; localmente use `npm run migrate:dev`.
 
 ### Painel
 

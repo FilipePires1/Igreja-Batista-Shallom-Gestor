@@ -72,7 +72,9 @@
     </div>
   </div>
   <script>
-    const API_BASES = ['/api'];
+    const API_BASES = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
+  ? ['http://localhost:3000/api', '/api']
+  : ['/api'];
 
     // Mapeia roles do banco → role web (define ROLE_ACCESS)
     function mapApiRole(roles) {
