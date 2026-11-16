@@ -50,7 +50,7 @@ jobs:
           file: ${{ matrix.file }}
           push: true
           tags: |
-            ghcr.io/filipepires1/${{ matrix.image }}:${{ github.sha }}
+            ghcr.io/filipepires1/${{ matrix.image }}:test-${{ github.sha }}
             ghcr.io/filipepires1/${{ matrix.image }}:test
           cache-from: type=gha,scope=${{ matrix.image }}
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}
@@ -64,7 +64,7 @@ jobs:
         uses: appleboy/ssh-action@v1.0.0
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          IMAGE_TAG: ${{ github.sha }}
+          IMAGE_TAG: test-${{ github.sha }}
         with:
           host: 116.203.100.189
           username: filipe
