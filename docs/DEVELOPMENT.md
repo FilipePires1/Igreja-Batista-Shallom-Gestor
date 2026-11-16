@@ -186,7 +186,7 @@ Não rode `seed.js` em produção.
 
 ```text
 develop  -> CI + deploy automático no TESTE
-main     -> CI em PR; produção só manual com aprovação
+main     -> protegida: PR + 4 checks do CI; produção só manual com aprovação
 ```
 
 Fluxo normal:
@@ -233,6 +233,14 @@ Smoke test dos ambientes:
 TEST_BASIC_AUTH='shallom:senha' \
 PROD_BASIC_AUTH='shallomprod:senha' \
 ./scripts/smoke.sh
+```
+
+No Windows:
+
+```powershell
+.\scripts\smoke.ps1 `
+  -TestBasicAuth 'shallom:senha' `
+  -ProdBasicAuth 'shallomprod:senha'
 ```
 
 ## Credenciais e segurança

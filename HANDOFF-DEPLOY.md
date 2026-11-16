@@ -19,8 +19,8 @@
 
 - Repositório: https://github.com/FilipePires1/Igreja-Batista-Shallom-Gestor
 - Branches: `main` (produção) e `develop` (teste).
-- Teste implantado: `22bd3ff` — run https://github.com/FilipePires1/Igreja-Batista-Shallom-Gestor/actions/runs/43922417291
-- Produção implantada: `c78d0a3` — run https://github.com/FilipePires1/Igreja-Batista-Shallom-Gestor/actions/runs/43923250512
+- Teste implantado: `5a93637` — run https://github.com/FilipePires1/Igreja-Batista-Shallom-Gestor/actions/runs/43942561459
+- Produção implantada: `5a93637` — run https://github.com/FilipePires1/Igreja-Batista-Shallom-Gestor/actions/runs/43942562276
 
 Workflows:
 
@@ -36,6 +36,9 @@ Produção usa o environment `producao` no GitHub, com:
 - branch policy: somente `main`;
 - nenhum deploy automático por push.
 
+A branch `main` está protegida: exige PR, os 4 checks do CI e não permite force
+push nem exclusão. O merge é feito via PR de `develop` para `main`.
+
 Imagens no GHCR:
 
 ```text
@@ -45,9 +48,9 @@ ghcr.io/filipepires1/igreja-shallom-app-publico
 ghcr.io/filipepires1/igreja-shallom-app-membros
 ```
 
-- Teste: `:test-<sha>` e `:test`.
-- Produção: `:<sha>` e `:latest`.
-- O deploy sempre usa `IMAGE_TAG=<sha>`.
+- Teste: `:test-<sha>` e `:test`; deploy com `IMAGE_TAG=test-<sha>`.
+- Produção: `:<sha>` e `:latest`; deploy com `IMAGE_TAG=<sha>`.
+- As tags são separadas para não colidir quando os dois ambientes sobem no mesmo commit.
 
 ### Como fazer deploy
 
@@ -95,7 +98,7 @@ Produção:
 
 Teste:
 
-- Quatro containers `healthy` na tag `22bd3ff`.
+- Quatro containers `healthy` na tag `test-5a93637`.
 - Painel `200` com Basic Auth; login `201`.
 - App público `200`.
 - App de membros `401` sem auth e `200` com auth; login `201`.
@@ -103,7 +106,7 @@ Teste:
 
 Produção:
 
-- Quatro containers `healthy` na tag `c78d0a3`.
+- Quatro containers `healthy` na tag `5a93637`.
 - Seed `seed-prod.js` executado: 6 cargos, 17 ministérios, permissões, seções do app, configurações e admin.
 - Painel `200` com Basic Auth; login `201`.
 - App público `200`.
@@ -135,6 +138,19 @@ Não ficam neste arquivo nem no repositório. Filipe tem os valores atuais.
 - Blocos de produção no Caddy, com Basic Auth separado.
 - Remoção dos arquivos `_test.html`, `_t2.html` e `_t3.html` do painel/imagem.
 
+### Preparado para desenvolvedores
+
+- `docs/DEVELOPMENT.md` — setup local, banco, migrations, seeds, branches e deploy.
+- `docs/API.md` — rotas atuais da API.
+- `scripts/db.sh` — shell/query/dump/backup dos bancos de teste e produção.
+- `scripts/smoke.sh` e `scripts/smoke.ps1` — smoke test dos dois ambientes.
+- Scripts npm na API: `prisma:generate`, `migrate:dev`, `migrate:deploy`,
+  `seed:dev`, `seed:prod`.
+- `.env.example` local da API.
+- Painel local detecta `localhost` e chama `http://localhost:3000/api`.
+- App de membros aceita `EXPO_PUBLIC_API_URL` para desenvolvimento local.
+- Branch `main` protegida com PR + 4 checks do CI; `develop` para integração.
+
 ## 7. Pendências antes de produção real
 
 - [ ] Trocar token `temp-<id>` por JWT assinado.
@@ -153,7 +169,7 @@ Rollback de teste:
 
 ```bash
 cd /opt/nextep/shallom
-export IMAGE_TAG=<sha>
+export IMAGE_TAG=test-<sha>
 docker compose pull
 docker compose up -d
 ```
@@ -201,6 +217,8 @@ docker exec nextep-edge caddy reload --config /etc/caddy/Caddyfile
 - `deploy/backup.sh` e `deploy/backup-prod.sh` — backups.
 - `banco-de-dados/ibscn-api/prisma/seed-prod.js` — seed de produção.
 - `deploy/README-DEPLOY.md` — documentação operacional completa.
+- `docs/DEVELOPMENT.md` e `docs/API.md` — onboarding e rotas.
+- `scripts/db.sh`, `scripts/smoke.sh` e `scripts/smoke.ps1` — operação e validação.
 
 ## 10. Observações para o próximo chat
 
