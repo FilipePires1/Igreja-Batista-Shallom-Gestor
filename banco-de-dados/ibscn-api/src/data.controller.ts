@@ -9,9 +9,11 @@ import {
   Param,
   Post,
   Query,
+  Res,
 } from '@nestjs/common';
 import { PrismaService } from './prisma.service';
 import * as bcrypt from 'bcryptjs';
+import { COOKIE_NAME, TTL_SECONDS, signSession } from './auth';
 
 const now = () => new Date().toISOString();
 
@@ -175,7 +177,10 @@ export class DataController {
 
   // ===== AUTH =====
   @Post('auth/login')
-  async login(@Body() body: { email: string; password: string }) {
+  async login(
+    @Body() body: { email: string; password: string },
+    @Res({ passthrough: true }) res: any,
+  ) {
     const user = await this.prisma.user.findUnique({
       where: { email: (body.email || '').toLowerCase().trim() },
       include: {
@@ -204,8 +209,18 @@ export class DataController {
       where: { id: user.id },
       data: { lastLoginAt: now(), failedLoginCount: 0 },
     });
+
+    const token = signSession(user.id);
+    res.cookie(COOKIE_NAME, token, {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: process.env.COOKIE_SECURE !== 'false',
+      path: '/',
+      maxAge: TTL_SECONDS * 1000,
+    });
+
     return {
-      token: `temp-${user.id}`,
+      token,
       user: {
         id: user.id,
         email: user.email,
@@ -216,6 +231,17 @@ export class DataController {
         roles: user.roles.map((r) => ({ name: r.role.name, label: r.role.label, level: r.role.level })),
       },
     };
+  }
+
+  @Post('auth/logout')
+  logout(@Res({ passthrough: true }) res: any) {
+    res.clearCookie(COOKIE_NAME, {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: process.env.COOKIE_SECURE !== 'false',
+      path: '/',
+    });
+    return { ok: true };
   }
 
   // ===== PESSOAS =====

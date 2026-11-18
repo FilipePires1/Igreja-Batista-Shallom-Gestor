@@ -40,6 +40,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = () => {
+    apiPost('/auth/logout', {});
     setIsLoggedIn(false);
     setUser(null);
   };
