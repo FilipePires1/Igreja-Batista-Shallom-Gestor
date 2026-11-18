@@ -72,18 +72,13 @@
     </div>
   </div>
   <script>
-    const API_BASES = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
-  ? ['http://localhost:3000/api', '/api']
-  : ['/api'];
+    const API_BASES = ['/api'];
 
-    // Mapeia roles do banco → role web (define ROLE_ACCESS)
+    // Papéis do sistema: admin master, pastor e membro.
     function mapApiRole(roles) {
       const names = (roles || []).map(r => r.name);
       if (names.includes('SUPER_ADMIN')) return { role: 'admin', label: 'Admin Master' };
       if (names.includes('PASTOR')) return { role: 'pastor', label: 'Pastor' };
-      if (names.includes('PRESBITERO')) return { role: 'presbitero', label: 'Presbítero' };
-      if (names.includes('LIDER')) return { role: 'lider', label: 'Líder' };
-      if (names.includes('COORDENADOR')) return { role: 'coordenador', label: 'Coordenador' };
       return { role: 'membro', label: 'Membro' };
     }
 
@@ -97,7 +92,17 @@
             body: JSON.stringify({ email, password: pass }), signal: ctrl.signal,
           });
           clearTimeout(timer);
-          if (!r.ok) return null;
+          if (!r.ok) {
+            let msg = '';
+            try {
+              const data = await r.json();
+              msg = Array.isArray(data.message) ? data.message.join(' ') : data.message;
+            } catch (e) { /* sem corpo JSON */ }
+            if ([400, 401, 403, 404, 422].includes(r.status)) {
+              return { error: msg || 'Não foi possível entrar. Verifique seus dados.' };
+            }
+            continue;
+          }
           const data = await r.json();
           const mapped = mapApiRole(data.user.roles);
           return {
@@ -107,7 +112,7 @@
           };
         } catch (e) { /* tenta próximo base */ }
       }
-      return null;
+      return { error: 'Não foi possível conectar ao servidor. Verifique se o sistema está online.' };
     }
 
     function initialsOf(name) {
@@ -119,13 +124,17 @@
       const email = document.getElementById('email').value.trim().toLowerCase();
       const pass = document.getElementById('password').value;
       const apiUser = await loginViaApi(email, pass);
-      if (apiUser) {
+      if (apiUser && !apiUser.error) {
         localStorage.setItem('loggedIn', 'true');
         localStorage.setItem('adminUser', JSON.stringify(apiUser));
         window.location.href = 'dashboard.html';
         return;
       }
-      document.getElementById('errorMsg').style.display = 'block';
+      const errEl = document.getElementById('errorMsg');
+      if (errEl) {
+        errEl.textContent = (apiUser && apiUser.error) || 'E-mail ou senha inválidos.';
+        errEl.style.display = 'block';
+      }
     }
     if (localStorage.getItem('loggedIn') === 'true' && localStorage.getItem('adminUser')) {
       window.location.href = 'dashboard.html';

@@ -11,7 +11,7 @@ model Person {
   name          String
   preferredName String?
   photoUrl      String?
-  phone         String
+  phone         String?
   whatsapp      String?
   email         String?
   cpf           String? @unique
@@ -19,6 +19,37 @@ model Person {
   address       String?
   city          String?
   state         String?
+  // Ficha de membresia / batismo
+  motherName           String?
+  fatherName           String?
+  sex                  String?
+  maritalStatus        String?
+  rg                   String?
+  birthplace           String?
+  profession           String?
+  education            String?
+  zipCode              String?
+  neighborhood         String?
+  residencePhone       String?
+  conversionDate       String?
+  spouseName           String?
+  previouslyMarried    String?
+  civilMarriageDate    String?
+  religiousMarriageDate String?
+  children             String?
+  previousChurches     String?
+  lastChurch           String?
+  previousPastorContact String?
+  previousChurchAddress String?
+  ministryInterest     String?
+  interviewedBy        String?
+  homeVisitDate        String?
+  membershipNotes      String?
+  membershipRecordNumber String?
+  membershipRequestStatus String?
+  membershipRequestDate String?
+  baptismPlace         String?
+  baptismPastor        String?
   status        String  @default("ACTIVE")
   memberSince   String?
   baptismDate   String?
@@ -40,6 +71,47 @@ model Person {
   transactions    Transaction[]
   attendances     Attendance[]
   rsvps           EventRsvp[]
+  baptismRecord   BaptismRecord?
+  indications     SectorIndication[]
+}
+
+model BaptismRecord {
+  id                    String  @id @default(cuid())
+  personId              String? @unique
+  name                  String
+  motherName            String?
+  fatherName            String?
+  birthdate             String?
+  maritalStatus         String?
+  cpf                   String?
+  rg                    String?
+  birthplace            String?
+  email                 String?
+  profession            String?
+  education             String?
+  address               String?
+  zipCode               String?
+  neighborhood          String?
+  city                  String?
+  state                 String?
+  residencePhone        String?
+  cellPhone             String?
+  conversionDate        String?
+  baptismDate           String?
+  spouseName            String?
+  previouslyMarried     String?
+  civilMarriageDate     String?
+  religiousMarriageDate String?
+  children              String?
+  notes                 String?
+  signature             String?
+  photoUrl              String?
+  status                String  @default("ACTIVE")
+  createdById           String?
+  createdAt             String  @default("")
+  updatedAt             String  @default("")
+
+  person Person? @relation(fields: [personId], references: [id])
 }
 
 model User {
@@ -49,6 +121,7 @@ model User {
   cpf              String?
   passwordHash     String
   status           String  @default("PENDING")
+  webAccess        Boolean @default(false)
   failedLoginCount Int     @default(0)
   lastLoginAt      String?
   biometricEnabled Boolean @default(false)
@@ -60,6 +133,7 @@ model User {
   roles             UserRole[]
   sectorRoles       SectorMember[]
   ledSectors        Sector[]           @relation("SectorLeader")
+  leaderLinks       SectorLeader[]
   scheduleMembers   ScheduleMember[]
   pushTokens        PushToken[]
   notifications     Notification[]
@@ -116,10 +190,20 @@ model Sector {
   readiness     Int     @default(100)
   groupTag      String  @default("operacoes")
   isLive        Boolean @default(false)
+  cargos        String? // JSON: lista de cargos/funções criados pelo líder do ministério
+  mission       String?
+  vision        String?
+  foundedAt     String?
+  notes         String?
+  whatsappLink  String?
+  contactEmail  String?
 
   leader        User?           @relation("SectorLeader", fields: [leaderUserId], references: [id])
+  leaderLinks   SectorLeader[]
   members       SectorMember[]
   schedules     Schedule[]
+  events        Event[]
+  indications   SectorIndication[]
   announcements Announcement[]
   tasks         Task[]
   permissions   Permission[]
@@ -127,20 +211,91 @@ model Sector {
 
 model SectorMember {
   id        String  @id @default(cuid())
-  userId    String
+  userId    String?
   personId  String?
   sectorId  String
   roleId    String
+  position  String?
+  positions String? // JSON: lista de cargos do membro no ministério
   status    String  @default("ACTIVE")
   joinedAt  String  @default("")
   addedById String
 
-  user   User    @relation(fields: [userId], references: [id])
+  user   User?   @relation(fields: [userId], references: [id])
   person Person? @relation(fields: [personId], references: [id])
   sector Sector  @relation(fields: [sectorId], references: [id])
   role   Role    @relation(fields: [roleId], references: [id])
 
   @@unique([userId, sectorId])
+}
+
+model SectorLeader {
+  id        String @id @default(cuid())
+  sectorId  String
+  userId    String
+  createdAt String @default("")
+
+  sector Sector @relation(fields: [sectorId], references: [id])
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@unique([sectorId, userId])
+}
+
+model SectorIndication {
+  id        String  @id @default(cuid())
+  sectorId  String
+  personId  String?
+  name      String
+  role      String?
+  year      String?
+  status    String  @default("INDICADO")
+  notes     String?
+  createdAt String  @default("")
+  updatedAt String  @default("")
+
+  sector Sector @relation(fields: [sectorId], references: [id])
+  person Person? @relation(fields: [personId], references: [id])
+}
+
+model MeetingMinute {
+  id          String  @id @default(cuid())
+  number      String
+  title       String
+  type        String  @default("ASSEMBLEIA")
+  date        String
+  timeStart   String?
+  location    String?
+  president   String?
+  secretary   String?
+  attendees   Int?
+  agenda      String?
+  body        String
+  decisions   String?
+  status      String  @default("DRAFT")
+  createdAt   String  @default("")
+  updatedAt   String  @default("")
+  createdById String?
+}
+
+model EventTag {
+  id       String  @id @default(cuid())
+  key      String  @unique
+  label    String
+  color    String
+  icon     String?
+  order    Int     @default(0)
+  isActive Boolean @default(true)
+}
+
+model CampusSpace {
+  id          String  @id @default(cuid())
+  name        String  @unique
+  description String?
+  capacity    Int?
+  color       String?
+  icon        String?
+  order       Int     @default(0)
+  isActive    Boolean @default(true)
 }
 
 model Event {
@@ -160,6 +315,7 @@ model Event {
   liveUrl       String?
   capacity      Int?
   sectorId      String?
+  sector        Sector? @relation(fields: [sectorId], references: [id])
   responsibleId String?
   liturgicCycle String?
   status        String  @default("SCHEDULED")

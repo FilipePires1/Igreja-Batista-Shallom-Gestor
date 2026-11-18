@@ -51,20 +51,17 @@ const ORDER_STATUSES = ['Pronto', 'Em Preparo', 'Retirada'];
 let currentId = 100;
 
 // ===== USERS, ROLES & PERMISSIONS =====
-const USERS = [
-  { email: 'admin@batistashallom.com', pass: 'admin123', name: 'Pr. Thiago Martins', role: 'pastor', roleLabel: 'Pastor', initials: 'TM' },
-  { email: 'tesoureiro@batistashallom.com', pass: 'admin123', name: 'Ana Ribeiro', role: 'tesoureiro', roleLabel: 'Tesoureira', initials: 'AR' },
-  { email: 'lider@batistashallom.com', pass: 'admin123', name: 'Joao Almeida', role: 'lider', roleLabel: 'Lider de Louvor', initials: 'JA' },
-];
+// Login unico via API (admin@nextep.com). Novos acessos sao criados em Pessoas.
+const USERS = [];
 
-const ALL_MODULES = ['dashboard', 'pessoas', 'setores', 'escalas', 'agenda', 'avisos', 'app-publico', 'cantina', 'tesouraria', 'relatorios', 'configuracoes'];
+const ALL_MODULES = ['dashboard', 'pessoas', 'batismos', 'setores', 'escalas', 'agenda', 'atas', 'avisos', 'app-publico', 'cantina', 'tesouraria', 'relatorios', 'configuracoes'];
 
-// Tesouraria: SOMENTE pastor ou tesoureiro
+// Papéis do sistema: admin master, pastor e membro.
+// Membro só entra se tiver acesso liberado (líder de ministério ou autorizado pelo pastor).
 const ROLE_ACCESS = {
+  admin: [...ALL_MODULES],
   pastor: [...ALL_MODULES],
-  tesoureiro: [...ALL_MODULES],
-  lider: ALL_MODULES.filter(m => m !== 'tesouraria'),
-  voluntario: ['dashboard', 'escalas', 'agenda', 'avisos', 'app-publico', 'cantina', 'configuracoes'],
+  membro: ['dashboard', 'escalas', 'agenda', 'avisos', 'configuracoes'],
 };
 
 let currentUser = null;
@@ -77,14 +74,37 @@ function getSessionUser() {
     const raw = localStorage.getItem('adminUser');
     if (raw) return JSON.parse(raw);
   } catch (e) { }
-  if (localStorage.getItem('loggedIn') === 'true') return USERS[0]; // compat: antigo login = pastor
+  if (localStorage.getItem('loggedIn') === 'true') return USERS[0] || null; // compatibilidade com sessões antigas
   return null;
 }
 
 function canAccess(section) {
   if (!currentUser) return false;
+  if (section === 'ministerio') {
+    if (['admin', 'pastor'].includes(currentUser.role)) return true;
+    const sector = (window.apiSectors || []).find(s => s.id === ministryPageId);
+    return !!(sector && currentUser.id && ((sector.leaderUserIds || []).includes(currentUser.id) || sector.leaderUserId === currentUser.id));
+  }
+  const keyMap = { 'novo-membro': 'pessoas', 'batismo-form': 'batismos', 'ata-form': 'atas', 'ata-view': 'atas' };
+  const key = keyMap[section] || section;
   const allowed = ROLE_ACCESS[currentUser.role] || [];
-  return allowed.includes(section);
+  return allowed.includes(key);
+}
+
+// Papel do usuário logado no formato aceito pela API.
+function apiActorRole() {
+  if (!currentUser) return '';
+  if (currentUser.role === 'admin') return 'SUPER_ADMIN';
+  if (currentUser.role === 'pastor') return 'PASTOR';
+  const names = currentUser.apiRoles || [];
+  if (names.includes('SUPER_ADMIN')) return 'SUPER_ADMIN';
+  if (names.includes('PASTOR')) return 'PASTOR';
+  return '';
+}
+
+// Somente admin master e pastor podem conceder/revogar acesso.
+function canManageAccess() {
+  return !!currentUser && ['admin', 'pastor'].includes(currentUser.role);
 }
 
 function applyPermissions() {
@@ -149,9 +169,16 @@ function getSectionTitle(section) {
   const titles = {
     dashboard: 'Início / Dashboard',
     pessoas: 'Pessoas & Membros',
+    batismos: 'Batismos',
+    'batismo-form': 'Ficha de Batismo',
     setores: 'Setores & Ministérios',
+    ministerio: 'Gerenciar Ministério',
     escalas: 'Escalas de Serviço',
+    'novo-membro': 'Cadastro de Membro',
     agenda: 'Agenda & Cultos',
+    atas: 'Atas & Assembleias',
+    'ata-form': 'Registro de Ata',
+    'ata-view': 'Visualizar Ata',
     avisos: 'Avisos & Comunicados',
     'app-publico': 'App Público',
     cantina: 'Cantina Shallom',
@@ -201,6 +228,7 @@ let _renderSectionTimer = null;
 let _skeletonActiveFor = null;
 const _realSectionHTML = {};
 function renderSection(section) {
+  if (section === 'novo-membro' || section === 'ministerio' || section === 'batismo-form' || section === 'ata-form' || section === 'ata-view') { _doRenderSection(section); return; }
   const secEl = document.getElementById('section-' + section);
   if (!secEl) { _doRenderSection(section); return; }
   if (_skeletonActiveFor === section) {
@@ -232,7 +260,14 @@ function _doRenderSection(section) {
     case 'dashboard': renderDashboard(); break;
     case 'agenda': renderEvents(); break;
     case 'pessoas': renderMembers(); break;
+    case 'batismos': renderBaptisms(); break;
+    case 'batismo-form': renderBaptismFormPage(); break;
+    case 'atas': renderMinutes(); break;
+    case 'ata-form': renderMinuteFormPage(); break;
+    case 'ata-view': renderMinuteViewPage(); break;
+    case 'novo-membro': renderMemberFormPage(); break;
     case 'setores': renderSetores(); break;
+    case 'ministerio': renderMinistryPage(); break;
     case 'escalas': renderEscalas(); break;
     case 'cantina': renderProducts(); break;
     case 'avisos': renderAnnouncements(); break;
@@ -709,113 +744,1568 @@ function renderRevenueChart() {
   });
 }
 
-// ===== EVENTS =====
-function renderEvents() {
-  const tbody = document.getElementById('eventsTableBody');
-  const q = (eventSearch || '').toLowerCase();
-  const filtered = mockEvents.filter(e => !q || e.name.toLowerCase().includes(q) || e.location.toLowerCase().includes(q));
-  tbody.innerHTML = filtered.map(e => `
-    <tr>
-      <td style="font-weight:500">${e.name}</td>
-      <td>${formatDate(e.date)}</td>
-      <td>${e.time}</td>
-      <td>${e.location}</td>
-      <td><span class="badge ${e.status === 'upcoming' ? 'badge-success' : 'badge-warning'}">${e.status === 'upcoming' ? 'Proximo' : 'Realizado'}</span></td>
-      <td class="table-actions">
-        <button class="btn-icon" onclick="editEvent(${e.id})" title="Editar"><span class="material-symbols-outlined" style="font-size:18px">edit</span></button>
-        <button class="btn-icon" onclick="deleteEvent(${e.id})" title="Excluir"><span class="material-symbols-outlined" style="font-size:18px;color:#DC2626">delete</span></button>
-      </td>
-    </tr>
-  `).join('');
+// ===== AGENDA & CULTOS =====
+const AGENDA_TYPE_META = {
+  CULTO: { label: 'Culto', icon: 'church', color: '#103B5F' },
+  CONFERENCIA: { label: 'Conferência', icon: 'mic-vocal', color: '#7C3AED' },
+  ENSAIO: { label: 'Ensaio', icon: 'music', color: '#16A2AD' },
+  REUNIAO: { label: 'Reunião', icon: 'users', color: '#D97706' },
+  ESCALA: { label: 'Escala', icon: 'clipboard-check', color: '#059669' },
+  RESERVA: { label: 'Reserva', icon: 'door-open', color: '#64748B' },
+  EVENTO: { label: 'Evento', icon: 'calendar-days', color: '#2C7FBF' },
+};
 
-  if (filtered.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="6"><div class="empty-state"><span class="material-symbols-outlined">search_off</span><p>Nenhum evento encontrado</p></div></td></tr>';
+const AGENDA_DEFAULT_SPACES = ['Auditório Principal', 'Sala Multiuso', 'Estúdio de Gravação'];
+let agendaView = 'month';
+let agendaCursor = new Date();
+let agendaSpaceFilter = 'all';
+
+function agendaPad(n) { return String(n).padStart(2, '0'); }
+function agendaIso(date) {
+  return `${date.getFullYear()}-${agendaPad(date.getMonth() + 1)}-${agendaPad(date.getDate())}`;
+}
+function agendaTodayISO() { return agendaIso(new Date()); }
+function agendaParseDate(iso) {
+  const p = String(iso || '').split('-').map(Number);
+  return new Date(p[0] || 2000, (p[1] || 1) - 1, p[2] || 1);
+}
+function agendaStartOfWeek(date) {
+  const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate() - d.getDay());
+}
+function agendaAddDays(date, days) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate() + days);
+}
+function agendaTagList() {
+  const tags = (window.apiEventTags || []).filter(t => t && t.isActive !== false);
+  if (tags.length) {
+    return tags.map(t => ({ key: t.key, label: t.label, color: t.color || '#2C7FBF', icon: t.icon || 'tag' }));
+  }
+  return Object.keys(AGENDA_TYPE_META).map(key => ({ key, ...AGENDA_TYPE_META[key] }));
+}
+
+function agendaTypeMeta(type) {
+  const key = String(type || 'EVENTO').toUpperCase();
+  const tag = agendaTagList().find(t => String(t.key).toUpperCase() === key || normHeader(t.label) === normHeader(type));
+  if (tag) return tag;
+  return AGENDA_TYPE_META[key] || AGENDA_TYPE_META.EVENTO;
+}
+function agendaCap(s) { return String(s || '').charAt(0).toUpperCase() + String(s || '').slice(1); }
+function agendaMonthName(date) {
+  return agendaCap(date.toLocaleDateString('pt-BR', { month: 'long' }));
+}
+function agendaWeekday(date) {
+  return agendaCap(date.toLocaleDateString('pt-BR', { weekday: 'long' }));
+}
+function agendaLongDate(iso) {
+  const d = agendaParseDate(iso);
+  return `${agendaWeekday(d)}, ${d.getDate()} de ${agendaMonthName(d).toLowerCase()} de ${d.getFullYear()}`;
+}
+function agendaSeason(date) {
+  const m = date.getMonth();
+  if (m >= 2 && m <= 4) return 'Outono';
+  if (m >= 5 && m <= 7) return 'Inverno';
+  if (m >= 8 && m <= 10) return 'Primavera';
+  return 'Verão';
+}
+function agendaShortLocation(location) {
+  const value = String(location || '');
+  return value.length > 24 ? value.slice(0, 23) + '…' : value;
+}
+
+function agendaEventItems() {
+  return (mockEvents || [])
+    .filter(e => e && e.date)
+    .map(e => ({
+      key: 'e:' + e.id,
+      source: 'event',
+      id: e.id,
+      title: e.name,
+      date: e.date,
+      timeStart: e.time || '',
+      timeEnd: e.timeEnd || '',
+      location: e.location || 'Templo Principal',
+      type: e.type || 'EVENTO',
+      status: e.apiStatus || (e.status === 'past' ? 'DONE' : 'SCHEDULED'),
+      description: e.description || '',
+      isPublic: !!e.isPublic,
+      capacity: e.capacity || null,
+      liveUrl: e.liveUrl || '',
+      sectorLabel: e.sectorLabel || '',
+      rsvps: e.rsvps || 0,
+      raw: e,
+    }));
+}
+
+function agendaScheduleItems() {
+  return (window.apiSchedules || [])
+    .filter(s => s && s.date)
+    .map(s => {
+      const title = String(s.title || 'Escala');
+      let type = 'ESCALA';
+      if (/ensaio/i.test(title)) type = 'ENSAIO';
+      else if (/reuni/i.test(title)) type = 'REUNIAO';
+      return {
+        key: 's:' + s.id,
+        source: 'schedule',
+        id: s.id,
+        title,
+        date: String(s.date).slice(0, 10),
+        timeStart: s.timeStart || '',
+        timeEnd: s.timeEnd || '',
+        location: s.location || 'Templo Principal',
+        type,
+        status: s.status || 'DRAFT',
+        sectorLabel: (s.sector && s.sector.label) || '',
+        sectorName: (s.sector && s.sector.name) || '',
+        raw: s,
+      };
+    });
+}
+
+function agendaAllItems() {
+  return [...agendaEventItems(), ...agendaScheduleItems()];
+}
+
+function agendaFilteredItems() {
+  const q = (eventSearch || '').trim().toLowerCase();
+  return agendaAllItems().filter(item => {
+    if (agendaSpaceFilter !== 'all' && (item.location || '') !== agendaSpaceFilter) return false;
+    if (!q) return true;
+    return `${item.title} ${item.location || ''} ${item.sectorLabel || ''}`.toLowerCase().includes(q);
+  });
+}
+
+function agendaItemsInMonth(items, date) {
+  const prefix = `${date.getFullYear()}-${agendaPad(date.getMonth() + 1)}`;
+  return items.filter(i => String(i.date).startsWith(prefix));
+}
+
+function agendaItemsInRange(items, start, end) {
+  const a = agendaIso(start);
+  const b = agendaIso(end);
+  return items.filter(i => i.date >= a && i.date <= b);
+}
+
+function agendaItemsOnDay(items, iso) {
+  return items.filter(i => i.date === iso).sort((a, b) => String(a.timeStart).localeCompare(String(b.timeStart)));
+}
+
+function agendaSpaceRecords() {
+  const list = (window.apiSpaces || []).filter(s => s && s.isActive !== false);
+  if (list.length) return list;
+  return AGENDA_DEFAULT_SPACES.map((name, i) => ({ id: '', name, description: '', order: i }));
+}
+
+function agendaSpaces() {
+  const set = new Set(agendaSpaceRecords().map(s => s.name));
+  agendaAllItems().forEach(item => { if (item.location) set.add(item.location); });
+  return [...set].sort((a, b) => String(a).localeCompare(String(b), 'pt-BR'));
+}
+
+function agendaSpaceMenuLabel() {
+  return agendaSpaceFilter === 'all' ? 'Filtrar Espaço' : agendaShortLocation(agendaSpaceFilter);
+}
+
+function renderAgendaSpaceMenu() {
+  const menu = document.getElementById('agendaSpaceMenu');
+  if (!menu) return;
+  const spaces = agendaSpaces();
+  menu.innerHTML = `
+    <div class="dropdown-label">Espaços</div>
+    <div class="dropdown-item ${agendaSpaceFilter === 'all' ? 'active' : ''}" onclick="setAgendaSpaceFilter('all')">
+      <i data-lucide="layers"></i> Todos os espaços
+    </div>
+    ${spaces.map(space => `
+      <div class="dropdown-item ${agendaSpaceFilter === space ? 'active' : ''}" onclick="setAgendaSpaceFilter('${encodeURIComponent(space)}')">
+        <i data-lucide="map-pin"></i> ${escHtml(space)}
+      </div>`).join('')}`;
+}
+
+function toggleAgendaSpaceMenu(event) {
+  if (event) event.stopPropagation();
+  const menu = document.getElementById('agendaSpaceMenu');
+  if (!menu) return;
+  const wasOpen = menu.classList.contains('open');
+  closeDropdowns();
+  if (!wasOpen) {
+    renderAgendaSpaceMenu();
+    menu.classList.add('open');
   }
 }
 
-function openEventModal(id) {
-  const event = id ? mockEvents.find(e => e.id === id) : null;
-  document.getElementById('modalTitle').textContent = event ? 'Editar Evento' : 'Novo Evento';
-  document.getElementById('modalBody').innerHTML = `
-    <div class="form-group">
-      <label>Nome do Evento</label>
-      <input type="text" id="eventName" value="${event ? event.name : ''}" placeholder="Ex: Culto de Domingo">
-    </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label>Data</label>
-        <input type="date" id="eventDate" value="${event ? event.date : ''}">
+function setAgendaSpaceFilter(value) {
+  agendaSpaceFilter = value === 'all' ? 'all' : decodeURIComponent(value);
+  closeDropdowns();
+  renderEvents();
+}
+
+function agendaNavigate(direction) {
+  if (agendaView === 'week') agendaCursor = agendaAddDays(agendaCursor, direction * 7);
+  else if (agendaView === 'day') agendaCursor = agendaAddDays(agendaCursor, direction);
+  else agendaCursor = new Date(agendaCursor.getFullYear(), agendaCursor.getMonth() + direction, 1);
+  renderEvents();
+}
+
+function agendaGoToday() {
+  agendaCursor = new Date();
+  renderEvents();
+}
+
+function setAgendaView(view) {
+  agendaView = view;
+  renderEvents();
+}
+
+function agendaOpenDay(iso) {
+  agendaCursor = agendaParseDate(iso);
+  agendaView = 'day';
+  renderEvents();
+}
+
+function renderAgendaChrome(items, rangeItems) {
+  const cursor = agendaCursor;
+  let label = `${agendaMonthName(cursor)} ${cursor.getFullYear()}`;
+  if (agendaView === 'week') {
+    const start = agendaStartOfWeek(cursor);
+    const end = agendaAddDays(start, 6);
+    label = `${start.getDate()} ${agendaMonthName(start).slice(0, 3)} – ${end.getDate()} ${agendaMonthName(end).slice(0, 3)} ${end.getFullYear()}`;
+  } else if (agendaView === 'day') {
+    label = `${agendaWeekday(cursor)}, ${cursor.getDate()} de ${agendaMonthName(cursor)}`;
+  }
+  setText('agendaMonthLabel', label);
+  setText('agendaSpaceLabel', agendaSpaceMenuLabel());
+  const events = rangeItems.filter(i => i.source === 'event').length;
+  const schedules = rangeItems.filter(i => i.source === 'schedule').length;
+  const filterNote = agendaSpaceFilter !== 'all' ? ` · ${agendaShortLocation(agendaSpaceFilter)}` : '';
+  setText('agendaSummary', `${rangeItems.length} compromisso${rangeItems.length === 1 ? '' : 's'} no período · ${events} evento${events === 1 ? '' : 's'} · ${schedules} escala${schedules === 1 ? '' : 's'}${filterNote}`);
+  document.querySelectorAll('#agendaViewSwitch button').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.view === agendaView);
+  });
+}
+
+function renderAgendaLegend() {
+  const box = document.getElementById('agendaLegend');
+  if (!box) return;
+  const tags = agendaTagList().filter(t => t.key !== 'ESCALA');
+  box.innerHTML = tags.map(tag => {
+    return `<span class="agenda-legend-item"><span class="agenda-dot" style="background:${tag.color}"></span>${escHtml(tag.label)}</span>`;
+  }).join('');
+}
+
+function agendaChipHTML(item) {
+  const meta = agendaTypeMeta(item.type);
+  const time = item.timeStart ? String(item.timeStart).slice(0, 5).replace(':', 'h') : '';
+  return `<button type="button" class="agenda-ev" style="border-left-color:${meta.color};background:${meta.color}14" onclick="event.stopPropagation();openAgendaItem('${item.key}')" title="${escHtml(item.title)} — ${escHtml(item.location || '')}">
+    <span class="agenda-ev-time">${escHtml(time)}</span>
+    <span class="agenda-ev-title">${escHtml(item.title)}</span>
+  </button>`;
+}
+
+function agendaEmptyHTML(icon, title, text, ctaLabel, ctaAction) {
+  return `<div class="agenda-empty">
+    <i data-lucide="${icon}"></i>
+    <strong>${escHtml(title)}</strong>
+    <p>${escHtml(text)}</p>
+    ${ctaLabel ? `<button class="btn-secondary" onclick="${ctaAction}">${escHtml(ctaLabel)}</button>` : ''}
+  </div>`;
+}
+
+function renderAgendaMonth(items) {
+  const body = document.getElementById('agendaCalendarBody');
+  if (!body) return;
+  const year = agendaCursor.getFullYear();
+  const month = agendaCursor.getMonth();
+  const first = new Date(year, month, 1);
+  const start = agendaStartOfWeek(first);
+  const last = new Date(year, month + 1, 0);
+  const totalDays = Math.ceil((last.getDate() + first.getDay()) / 7) * 7;
+  const today = agendaTodayISO();
+  const weekdays = ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SÁB'];
+  let html = `<div class="agenda-weekdays">${weekdays.map(d => `<span>${d}</span>`).join('')}</div>`;
+  html += `<div class="agenda-month-grid">`;
+  for (let i = 0; i < totalDays; i++) {
+    const day = agendaAddDays(start, i);
+    const iso = agendaIso(day);
+    const dayItems = agendaItemsOnDay(items, iso);
+    const other = day.getMonth() !== month;
+    const chips = dayItems.slice(0, 3).map(agendaChipHTML).join('');
+    const more = dayItems.length > 3 ? `<button class="agenda-more" onclick="event.stopPropagation();agendaOpenDay('${iso}')">+${dayItems.length - 3} mais</button>` : '';
+    html += `<div class="agenda-day ${other ? 'is-other-month' : ''} ${iso === today ? 'is-today' : ''}" onclick="openEventModal(null,'${iso}')">
+      <div class="agenda-day-head">
+        <span class="agenda-day-num">${day.getDate()}</span>
+        ${iso === today ? '<span class="agenda-today-tag">Hoje</span>' : ''}
+        <span class="agenda-day-add" title="Novo evento"><i data-lucide="plus"></i></span>
       </div>
-      <div class="form-group">
-        <label>Horario</label>
-        <input type="time" id="eventTime" value="${event ? event.time : ''}">
-      </div>
-    </div>
-    <div class="form-group">
-      <label>Local</label>
-      <input type="text" id="eventLocation" value="${event ? event.location : ''}" placeholder="Ex: Templo Principal">
-    </div>
-    <div class="form-group">
-      <label>Status</label>
-      <select id="eventStatus">
-        <option value="upcoming" ${event && event.status === 'upcoming' ? 'selected' : ''}>Proximo</option>
-        <option value="past" ${event && event.status === 'past' ? 'selected' : ''}>Realizado</option>
-      </select>
-    </div>
-    <div class="modal-footer" style="padding:16px 0 0;border-top:1px solid #F3F4F6;margin-top:8px">
-      <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
-      <button class="btn-primary" onclick="saveEvent(${id || 'null'})">
-        <span class="material-symbols-outlined" style="font-size:18px">save</span> Salvar
+      <div class="agenda-day-events">${chips}${more}</div>
+    </div>`;
+  }
+  html += `</div>`;
+  body.innerHTML = html;
+}
+
+function renderAgendaWeek(items) {
+  const body = document.getElementById('agendaCalendarBody');
+  if (!body) return;
+  const start = agendaStartOfWeek(agendaCursor);
+  const today = agendaTodayISO();
+  let html = `<div class="agenda-week-grid">`;
+  for (let i = 0; i < 7; i++) {
+    const day = agendaAddDays(start, i);
+    const iso = agendaIso(day);
+    const dayItems = agendaItemsOnDay(items, iso);
+    html += `<div class="agenda-week-col ${iso === today ? 'is-today' : ''}">
+      <button type="button" class="agenda-week-dayhead" onclick="agendaOpenDay('${iso}')">
+        <span class="agenda-week-dow">${['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SÁB'][i]}</span>
+        <strong>${day.getDate()}</strong>
+        <small>${agendaMonthName(day).slice(0, 3)}</small>
       </button>
-    </div>
-  `;
+      <div class="agenda-week-events">
+        ${dayItems.map(agendaChipHTML).join('') || '<span class="agenda-week-empty">Sem compromissos</span>'}
+      </div>
+      <button type="button" class="agenda-week-add" onclick="openEventModal(null,'${iso}')"><i data-lucide="plus"></i></button>
+    </div>`;
+  }
+  html += `</div>`;
+  body.innerHTML = html;
+}
+
+function renderAgendaDay(items) {
+  const body = document.getElementById('agendaCalendarBody');
+  if (!body) return;
+  const iso = agendaIso(agendaCursor);
+  const dayItems = agendaItemsOnDay(items, iso);
+  body.innerHTML = `
+    <div class="agenda-day-view">
+      <div class="agenda-day-view-head">
+        <div>
+          <strong>${escHtml(agendaLongDate(iso))}</strong>
+          <small>${dayItems.length} compromisso${dayItems.length === 1 ? '' : 's'}</small>
+        </div>
+        <button class="btn-primary btn-sm" onclick="openEventModal(null,'${iso}')"><i data-lucide="plus"></i> Novo evento</button>
+      </div>
+      ${dayItems.length ? dayItems.map(item => agendaRowHTML(item, true)).join('') : agendaEmptyHTML('calendar-x', 'Nenhum compromisso neste dia', 'Crie um evento ou escolha outra data no calendário.', 'Novo evento neste dia', `openEventModal(null,'${iso}')`)}
+    </div>`;
+}
+
+function agendaRowHTML(item, showDate) {
+  const meta = agendaTypeMeta(item.type);
+  const date = agendaParseDate(item.date);
+  const status = agendaStatusLabel(item);
+  return `<button type="button" class="agenda-row" onclick="openAgendaItem('${item.key}')">
+    <span class="agenda-row-date">
+      <strong>${date.getDate()}</strong>
+      <small>${agendaMonthName(date).slice(0, 3)}</small>
+    </span>
+    <span class="agenda-row-time">${escHtml(item.timeStart || '—')}${item.timeEnd ? ' – ' + escHtml(item.timeEnd) : ''}</span>
+    <span class="agenda-row-dot" style="background:${meta.color}"></span>
+    <span class="agenda-row-info">
+      <strong>${escHtml(item.title)}</strong>
+      <small>${escHtml(item.location || 'Sem local')}${item.sectorLabel ? ' · ' + escHtml(item.sectorLabel) : ''}</small>
+    </span>
+    <span class="pill ${status.cls}">${status.label}</span>
+    <i data-lucide="chevron-right" class="agenda-row-chev"></i>
+  </button>`;
+}
+
+function agendaStatusLabel(item) {
+  if (item.source === 'event') {
+    const s = String(item.status || '').toUpperCase();
+    if (s === 'CANCELED' || s === 'CANCELLED') return { label: 'Cancelado', cls: 'pill-red' };
+    if (s === 'DONE' || s === 'FINISHED') return { label: 'Realizado', cls: 'pill-gray' };
+    if (item.date < agendaTodayISO()) return { label: 'Realizado', cls: 'pill-gray' };
+    return { label: 'Confirmado', cls: 'pill-green' };
+  }
+  const s = String(item.status || '').toUpperCase();
+  if (s === 'PUBLISHED') return { label: 'Publicada', cls: 'pill-green' };
+  if (s === 'CONFIRMED') return { label: 'Confirmada', cls: 'pill-blue' };
+  return { label: 'Rascunho', cls: 'pill-orange' };
+}
+
+function renderAgendaList(items) {
+  const body = document.getElementById('agendaCalendarBody');
+  if (!body) return;
+  const monthItems = agendaItemsInMonth(items, agendaCursor).sort((a, b) =>
+    String(a.date + (a.timeStart || '')).localeCompare(String(b.date + (b.timeStart || ''))));
+  if (!monthItems.length) {
+    body.innerHTML = agendaEmptyHTML('calendar-x', 'Nenhum compromisso neste mês', 'Cadastre um culto, evento ou ensaio para começar.', 'Novo evento ou culto', 'openEventModal()');
+    return;
+  }
+  body.innerHTML = `<div class="agenda-list">${monthItems.map(item => agendaRowHTML(item, true)).join('')}</div>`;
+}
+
+function renderEvents() {
+  const items = agendaFilteredItems();
+  let rangeItems = items;
+  if (agendaView === 'week') {
+    const start = agendaStartOfWeek(agendaCursor);
+    rangeItems = agendaItemsInRange(items, start, agendaAddDays(start, 6));
+  } else if (agendaView === 'day') {
+    rangeItems = agendaItemsOnDay(items, agendaIso(agendaCursor));
+  } else {
+    rangeItems = agendaItemsInMonth(items, agendaCursor);
+  }
+  renderAgendaChrome(items, rangeItems);
+  if (agendaView === 'month') renderAgendaMonth(items);
+  else if (agendaView === 'week') renderAgendaWeek(items);
+  else if (agendaView === 'day') renderAgendaDay(items);
+  else renderAgendaList(items);
+  renderAgendaLegend();
+  renderAgendaSide();
+  if (window.lucide) lucide.createIcons();
+}
+
+function openAgendaItem(key) {
+  const item = agendaAllItems().find(i => i.key === key);
+  if (!item) return;
+  if (item.source === 'schedule') openAgendaScheduleDetail(item);
+  else openAgendaEventDetail(item);
+}
+
+function openAgendaEventDetail(item) {
+  const meta = agendaTypeMeta(item.type);
+  const date = agendaParseDate(item.date);
+  const status = agendaStatusLabel(item);
+  document.getElementById('modalTitle').textContent = item.title;
+  document.getElementById('modalBody').innerHTML = `
+    <div class="agenda-detail">
+      <div class="agenda-detail-top">
+        <span class="pill" style="background:${meta.color}18;color:${meta.color}"><i data-lucide="${meta.icon}" style="width:13px;height:13px"></i> ${meta.label}</span>
+        <span class="pill ${status.cls}">${status.label}</span>
+        ${item.isPublic ? '<span class="pill pill-blue">Público</span>' : '<span class="pill pill-gray">Interno</span>'}
+      </div>
+      <div class="agenda-detail-meta">
+        <span><i data-lucide="calendar-days"></i>${escHtml(agendaLongDate(item.date))}</span>
+        <span><i data-lucide="clock-3"></i>${escHtml(item.timeStart || '—')}${item.timeEnd ? ' às ' + escHtml(item.timeEnd) : ''}</span>
+        <span><i data-lucide="map-pin"></i>${escHtml(item.location || 'Local não informado')}</span>
+        ${item.sectorLabel ? `<span><i data-lucide="network"></i>${escHtml(item.sectorLabel)}</span>` : ''}
+        ${item.capacity ? `<span><i data-lucide="users"></i>Capacidade: ${item.capacity}</span>` : ''}
+      </div>
+      ${item.description ? `<p class="agenda-detail-desc">${escHtml(item.description)}</p>` : ''}
+      ${item.liveUrl ? `<a class="agenda-live-link" href="${escHtml(item.liveUrl)}" target="_blank" rel="noopener"><i data-lucide="radio"></i> Abrir transmissão</a>` : ''}
+      <div class="agenda-detail-actions">
+        <button class="btn-danger" onclick="deleteEvent('${item.id}')"><i data-lucide="trash-2"></i> Excluir</button>
+        <button class="btn-primary" onclick="editEvent('${item.id}')"><i data-lucide="pencil"></i> Editar evento</button>
+      </div>
+    </div>`;
   openModal();
+}
+
+function openAgendaScheduleDetail(item) {
+  const status = agendaStatusLabel(item);
+  document.getElementById('modalTitle').textContent = item.title;
+  document.getElementById('modalBody').innerHTML = `
+    <div class="agenda-detail">
+      <div class="agenda-detail-top">
+        <span class="pill" style="background:${agendaTypeMeta(item.type).color}18;color:${agendaTypeMeta(item.type).color}">${agendaTypeMeta(item.type).label}</span>
+        <span class="pill ${status.cls}">${status.label}</span>
+      </div>
+      <div class="agenda-detail-meta">
+        <span><i data-lucide="calendar-days"></i>${escHtml(agendaLongDate(item.date))}</span>
+        <span><i data-lucide="clock-3"></i>${escHtml(item.timeStart || '—')}${item.timeEnd ? ' às ' + escHtml(item.timeEnd) : ''}</span>
+        <span><i data-lucide="map-pin"></i>${escHtml(item.location || 'Templo Principal')}</span>
+        ${item.sectorLabel ? `<span><i data-lucide="network"></i>${escHtml(item.sectorLabel)}</span>` : ''}
+      </div>
+      <div class="agenda-detail-actions">
+        <button class="btn-primary" onclick="openAgendaScheduleInEscalas('${item.id}','${encodeURIComponent(item.sectorName || '')}')"><i data-lucide="calendar-check"></i> Abrir escala</button>
+      </div>
+    </div>`;
+  openModal();
+}
+
+function openAgendaScheduleInEscalas(scheduleId, sectorName) {
+  closeModal();
+  escMinistryName = sectorName ? decodeURIComponent(sectorName) : null;
+  escActiveId = scheduleId;
+  navigateTo('escalas');
+}
+
+function agendaTypeOptions(selected) {
+  return Object.keys(AGENDA_TYPE_META)
+    .filter(type => type !== 'ESCALA')
+    .map(type => `<option value="${type}" ${selected === type ? 'selected' : ''}>${AGENDA_TYPE_META[type].label}</option>`).join('');
+}
+
+function agendaTagChipsHTML(selected) {
+  return agendaTagList()
+    .filter(t => t.key !== 'ESCALA')
+    .map(t => `<button type="button" class="agenda-tag-option ${t.key === selected ? 'selected' : ''}" style="--tag-color:${t.color}" onclick="selectAgendaTag('${t.key}')">
+      <span class="agenda-tag-check"><i data-lucide="check"></i></span>
+      <span>${escHtml(t.label)}</span>
+    </button>`).join('');
+}
+
+function selectAgendaTag(key) {
+  const input = document.getElementById('eventType');
+  if (input) input.value = key;
+  document.querySelectorAll('#eventTagPicker .agenda-tag-option').forEach(btn => {
+    btn.classList.toggle('selected', btn.textContent.trim() === (agendaTypeMeta(key).label || '').trim() || btn.getAttribute('onclick').includes(`'${key}'`));
+  });
+}
+
+async function createEventTagInline() {
+  const labelEl = document.getElementById('newTagLabel');
+  const colorEl = document.getElementById('newTagColor');
+  const label = labelEl ? labelEl.value.trim() : '';
+  if (!label) { showToast('Informe o nome da etiqueta', 'error'); return; }
+  try {
+    const created = await apiPost('/event-tags', { label, color: colorEl ? colorEl.value : '#2C7FBF' });
+    const tags = await apiGet('/event-tags');
+    window.apiEventTags = Array.isArray(tags) ? tags : [];
+    const picker = document.getElementById('eventTagPicker');
+    if (picker) {
+      picker.innerHTML = agendaTagChipsHTML(created.key);
+      const hidden = document.getElementById('eventType');
+      if (hidden) hidden.value = created.key;
+      if (window.lucide) lucide.createIcons();
+    }
+    if (labelEl) labelEl.value = '';
+    renderAgendaLegend();
+    showToast('Etiqueta criada e selecionada', 'success');
+  } catch (e) {
+    showToast((e && e.message) || 'Não foi possível criar a etiqueta', 'error');
+  }
+}
+
+function openEventModal(id, presetDate, presetType, presetLocation) {
+  const event = id ? mockEvents.find(e => String(e.id) === String(id)) : null;
+  const date = presetDate || (event ? event.date : agendaTodayISO());
+  const type = presetType || (event ? event.type : 'CULTO');
+  const location = presetLocation ? decodeURIComponent(presetLocation) : (event ? event.location : '');
+  const title = event ? event.name : '';
+  const start = event ? event.time : '18:00';
+  const end = event ? (event.timeEnd || '') : '20:00';
+  const sectorOptions = ['<option value="">Sem ministério específico</option>']
+    .concat((mockDepartments || []).map(d => `<option value="${d._apiId || d.id}" ${event && event.sectorId === (d._apiId || d.id) ? 'selected' : ''}>${escHtml(d.name)}</option>`))
+    .join('');
+  document.getElementById('modalTitle').textContent = event ? 'Editar evento' : 'Novo evento ou culto';
+  document.getElementById('modalBody').innerHTML = `
+    <div class="agenda-form">
+      <div class="form-group nm-full">
+        <label>Nome do evento *</label>
+        <input type="text" id="eventName" value="${escHtml(title)}" placeholder="Ex.: Culto de Celebração">
+      </div>
+      <div class="form-group nm-full">
+        <label>Etiqueta do evento *</label>
+        <input type="hidden" id="eventType" value="${escHtml(type)}">
+        <div class="agenda-tag-picker" id="eventTagPicker">${agendaTagChipsHTML(type)}</div>
+        <div class="agenda-tag-create">
+          <input type="text" id="newTagLabel" placeholder="Nova etiqueta (ex.: Vigília)">
+          <input type="color" id="newTagColor" value="#2C7FBF">
+          <button type="button" class="btn-ghost btn-sm" onclick="createEventTagInline()"><i data-lucide="plus"></i> Criar etiqueta</button>
+        </div>
+        <span class="nm-hint">Clique na etiqueta para selecionar. Você pode criar novas etiquetas.</span>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Ministério responsável</label>
+          <select id="eventSector">${sectorOptions}</select>
+        </div>
+        <div class="form-group">
+          <label>Status</label>
+          <select id="eventStatus">
+            <option value="SCHEDULED" ${!event || event.apiStatus === 'SCHEDULED' ? 'selected' : ''}>Agendado</option>
+            <option value="CONFIRMED" ${event && event.apiStatus === 'CONFIRMED' ? 'selected' : ''}>Confirmado</option>
+            <option value="CANCELED" ${event && event.apiStatus === 'CANCELED' ? 'selected' : ''}>Cancelado</option>
+            <option value="DONE" ${event && event.apiStatus === 'DONE' ? 'selected' : ''}>Realizado</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row agenda-form-row-3">
+        <div class="form-group">
+          <label>Data *</label>
+          <input type="date" id="eventDate" value="${escHtml(date)}">
+        </div>
+        <div class="form-group">
+          <label>Início *</label>
+          <input type="time" id="eventTime" value="${escHtml(start)}">
+        </div>
+        <div class="form-group">
+          <label>Término</label>
+          <input type="time" id="eventTimeEnd" value="${escHtml(end)}">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Local</label>
+        <input type="text" id="eventLocation" list="agendaLocationList" value="${escHtml(location)}" placeholder="Ex.: Auditório Principal">
+        <datalist id="agendaLocationList">${agendaSpaces().map(s => `<option value="${escHtml(s)}"></option>`).join('')}</datalist>
+      </div>
+      <div class="form-group">
+        <label>Descrição</label>
+        <textarea id="eventDescription" rows="2" placeholder="Detalhes do evento ou culto">${escHtml(event ? event.description : '')}</textarea>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Capacidade</label>
+          <input type="number" min="0" id="eventCapacity" value="${event && event.capacity ? event.capacity : ''}" placeholder="Opcional">
+        </div>
+        <div class="form-group">
+          <label>Link da transmissão</label>
+          <input type="url" id="eventLiveUrl" value="${escHtml(event ? event.liveUrl : '')}" placeholder="https://youtube.com/...">
+        </div>
+      </div>
+      <div class="form-group agenda-switch-group">
+        <label class="agenda-switch">
+          <input type="checkbox" id="eventPublic" ${event && event.isPublic ? 'checked' : ''}>
+          <span class="agenda-switch-track"><span></span></span>
+          <span class="agenda-switch-copy"><b>Evento público</b><small>Aparece no app público da igreja.</small></span>
+        </label>
+      </div>
+      <div class="modal-footer" style="padding:16px 0 0;border-top:1px solid var(--border);margin-top:8px">
+        <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+        <button class="btn-primary" onclick="saveEvent(${event ? `'${event.id}'` : 'null'})"><i data-lucide="save"></i> ${event ? 'Salvar alterações' : 'Criar evento'}</button>
+      </div>
+    </div>`;
+  openModal();
+  const modalEl = document.querySelector('#modalOverlay .modal');
+  if (modalEl) modalEl.classList.add('modal-lg');
+  if (window.lucide) lucide.createIcons();
 }
 
 function editEvent(id) { openEventModal(id); }
 
-function saveEvent(id) {
-  const name = document.getElementById('eventName').value.trim();
-  const date = document.getElementById('eventDate').value;
-  const time = document.getElementById('eventTime').value;
-  const location = document.getElementById('eventLocation').value.trim();
-  const status = document.getElementById('eventStatus').value;
-
-  if (!name || !date || !time || !location) { showToast('Preencha todos os campos', 'error'); return; }
-
-  if (id) {
-    const ev = mockEvents.find(e => e.id === id);
-    Object.assign(ev, { name, date, time, location, status });
-    showToast('Evento atualizado com sucesso!');
-  } else {
-    mockEvents.push({ id: ++currentId, name, date, time, location, status });
-    showToast('Evento criado com sucesso!');
+async function saveEvent(id) {
+  const title = (document.getElementById('eventName') || {}).value || '';
+  const type = (document.getElementById('eventType') || {}).value || 'EVENTO';
+  const sectorId = (document.getElementById('eventSector') || {}).value || '';
+  const date = (document.getElementById('eventDate') || {}).value || '';
+  const timeStart = (document.getElementById('eventTime') || {}).value || '';
+  const timeEnd = (document.getElementById('eventTimeEnd') || {}).value || '';
+  const location = (document.getElementById('eventLocation') || {}).value || '';
+  const description = (document.getElementById('eventDescription') || {}).value || '';
+  const capacity = (document.getElementById('eventCapacity') || {}).value || '';
+  const liveUrl = (document.getElementById('eventLiveUrl') || {}).value || '';
+  const status = (document.getElementById('eventStatus') || {}).value || 'SCHEDULED';
+  const isPublic = !!(document.getElementById('eventPublic') || {}).checked;
+  if (!title.trim()) { showToast('Informe o nome do evento', 'error'); return; }
+  if (!date) { showToast('Informe a data do evento', 'error'); return; }
+  if (!timeStart) { showToast('Informe o horário de início', 'error'); return; }
+  const payload = {
+    title: title.trim(), type, sectorId, date, timeStart, timeEnd,
+    location: location.trim(), description: description.trim(),
+    capacity: capacity || null, liveUrl: liveUrl.trim(), status, isPublic,
+    actorId: currentUser ? currentUser.id : undefined,
+  };
+  try {
+    if (id) await apiPost(`/events/${id}/update`, payload);
+    else await apiPost('/events', payload);
+    await hydrateFromApi();
+    closeModal();
+    agendaCursor = agendaParseDate(date);
+    renderEvents();
+    showToast(id ? 'Evento atualizado!' : 'Evento criado!', 'success');
+  } catch (e) {
+    showToast((e && e.message) || 'Não foi possível salvar o evento', 'error');
   }
-  closeModal();
-  renderEvents();
 }
 
-function deleteEvent(id) {
-  const ev = mockEvents.find(e => e.id === id);
-  document.getElementById('modalTitle').textContent = 'Excluir Evento';
-  document.getElementById('modalBody').innerHTML = `
-    <p style="margin-bottom:20px;color:#464555">Tem certeza que deseja excluir o evento <strong>${ev.name}</strong>?</p>
-    <div class="modal-footer" style="padding:16px 0 0;border-top:1px solid #F3F4F6;margin-top:8px">
-      <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
-      <button class="btn-danger" onclick="confirmDeleteEvent(${id})">
-        <span class="material-symbols-outlined" style="font-size:18px">delete</span> Excluir
-      </button>
+async function deleteEvent(id) {
+  const event = mockEvents.find(e => String(e.id) === String(id));
+  if (!event) return;
+  if (!(await appConfirm(`Excluir o evento "${event.name}"? Esta ação não pode ser desfeita.`, { title: 'Excluir evento', confirmLabel: 'Excluir', icon: 'event_busy', tone: 'danger' }))) return;
+  try {
+    await apiPost(`/events/${id}/delete`, {});
+    await hydrateFromApi();
+    closeModal();
+    renderEvents();
+    showToast('Evento excluído', 'success');
+  } catch (e) {
+    showToast((e && e.message) || 'Não foi possível excluir o evento', 'error');
+  }
+}
+
+function agendaSchedulesForDate(date) {
+  return (window.apiSchedules || []).filter(s => String(s.date || '').slice(0, 10) === date);
+}
+
+function agendaNextCulto() {
+  const today = agendaTodayISO();
+  return agendaEventItems()
+    .filter(i => i.type === 'CULTO' && i.date >= today)
+    .sort((a, b) => String(a.date + (a.timeStart || '')).localeCompare(String(b.date + (b.timeStart || ''))))[0] || null;
+}
+
+function renderAgendaNextPanel(next) {
+  const box = document.getElementById('agendaNextPanel');
+  if (!box) return;
+  if (!next) {
+    box.innerHTML = `
+      <div class="agenda-side-head"><div><span class="agenda-side-eyebrow">Próximo culto</span><h3>Nenhum culto futuro</h3></div></div>
+      <div class="agenda-side-empty">
+        <i data-lucide="calendar-plus"></i>
+        <p>Nenhum culto agendado a partir de hoje. Cadastre o próximo para acompanhar as escalas.</p>
+        <button class="btn-primary btn-block" onclick="openEventModal(null, agendaTodayISO(), 'CULTO')"><i data-lucide="plus"></i> Agendar culto</button>
+      </div>`;
+    if (window.lucide) lucide.createIcons();
+    return;
+  }
+  const date = agendaParseDate(next.date);
+  const schedules = agendaSchedulesForDate(next.date);
+  const confirmed = schedules.reduce((sum, s) => sum + (s.confirmedCount || 0), 0);
+  const total = schedules.reduce((sum, s) => sum + (s.totalPositions || (s.members || []).length || 0), 0);
+  const pct = total ? Math.min(100, Math.round((confirmed / total) * 100)) : 0;
+  const groups = {};
+  schedules.forEach(s => {
+    const label = (s.sector && s.sector.label) || 'Ministério';
+    const g = groups[label] || { confirmed: 0, total: 0 };
+    g.confirmed += s.confirmedCount || 0;
+    g.total += s.totalPositions || (s.members || []).length || 0;
+    groups[label] = g;
+  });
+  const scaleCards = Object.keys(groups).slice(0, 6).map(label => {
+    const g = groups[label];
+    const done = g.total > 0 && g.confirmed >= g.total;
+    const remaining = Math.max(0, g.total - g.confirmed);
+    return `<div class="agenda-scale-card">
+      <span>${escHtml(label)}</span>
+      <strong>${g.confirmed}/${g.total}</strong>
+      <small class="${done ? 'ok' : 'pending'}">${done ? 'Completo' : (g.total ? remaining + ' pendente' + (remaining === 1 ? '' : 's') : 'Sem vagas')}</small>
+    </div>`;
+  }).join('');
+  const meta = agendaTypeMeta(next.type);
+  box.innerHTML = `
+    <div class="agenda-side-head">
+      <div>
+        <span class="agenda-side-eyebrow">Próximo culto em</span>
+        <h3>${escHtml(next.title)}</h3>
+      </div>
+      <span class="agenda-date-badge"><strong>${date.getDate()}</strong><small>${agendaMonthName(date).slice(0, 3).toUpperCase()}</small></span>
     </div>
-  `;
-  openModal();
+    <div class="agenda-next-visual" style="background:linear-gradient(135deg,${meta.color} 0%,#16A2AD 100%)">
+      <i data-lucide="${meta.icon}"></i>
+      <span>${escHtml(next.location || 'Templo Principal')}</span>
+    </div>
+    <div class="agenda-next-meta">
+      <span><i data-lucide="calendar-days"></i>${escHtml(agendaLongDate(next.date))}</span>
+      <span><i data-lucide="clock-3"></i>${escHtml(next.timeStart || '—')}${next.timeEnd ? ' às ' + escHtml(next.timeEnd) : ''}</span>
+      <span><i data-lucide="map-pin"></i>${escHtml(next.location || 'Templo Principal')}</span>
+    </div>
+    <div class="agenda-live-row ${next.liveUrl ? 'is-live' : ''}">
+      <span class="agenda-live-ico"><i data-lucide="radio"></i></span>
+      <div>
+        <strong>${next.liveUrl ? 'Transmissão configurada' : 'Transmissão não configurada'}</strong>
+        <small>${next.liveUrl ? 'Link disponível para o culto' : 'Adicione o link ao editar o evento'}</small>
+      </div>
+      ${next.liveUrl
+        ? `<a class="btn-ghost btn-sm" href="${escHtml(next.liveUrl)}" target="_blank" rel="noopener">Abrir</a>`
+        : `<button class="btn-ghost btn-sm" onclick="editEvent('${next.id}')">Configurar</button>`}
+    </div>
+    <div class="agenda-attendance">
+      <div class="agenda-attendance-head">
+        <div><span class="agenda-side-eyebrow">Equipe confirmada</span><strong>${confirmed}<small>/${total}</small></strong></div>
+        <span class="pill ${total && confirmed >= total ? 'pill-green' : 'pill-orange'}">${total ? pct + '%' : 'Sem escala'}</span>
+      </div>
+      <div class="agenda-progress"><span style="width:${pct}%"></span></div>
+      <small>${total ? `${total - confirmed} posição${total - confirmed === 1 ? '' : 'ões'} em aberto · ${schedules.length} escala${schedules.length === 1 ? '' : 's'}` : 'Nenhuma escala vinculada a este culto.'}</small>
+    </div>
+    ${scaleCards ? `<div class="agenda-scales-block"><span class="agenda-side-eyebrow">Escalas de voluntários</span><div class="agenda-scale-grid">${scaleCards}</div></div>` : ''}
+    <button class="btn-secondary btn-block agenda-open-scales" onclick="navigateTo('escalas')"><i data-lucide="calendar-check"></i> Abrir matriz de escalas</button>`;
+  if (window.lucide) lucide.createIcons();
 }
 
-function confirmDeleteEvent(id) {
-  const idx = mockEvents.findIndex(e => e.id === id);
-  if (idx > -1) mockEvents.splice(idx, 1);
-  closeModal();
-  renderEvents();
-  showToast('Evento excluido');
+function renderAgendaSpacesPanel() {
+  const box = document.getElementById('agendaSpacesPanel');
+  if (!box) return;
+  const today = agendaTodayISO();
+  const spaceRecords = agendaSpaceRecords().slice(0, 5);
+  const rows = spaceRecords.map(space => {
+    const name = space.name;
+    const todays = agendaEventItems().filter(e => e.date === today && (e.location || '').includes(name));
+    const event = todays[0];
+    return `<button type="button" class="agenda-space-row ${event ? 'is-busy' : 'is-free'}" onclick="openEventModal(null,'${today}','RESERVA','${encodeURIComponent(name)}')">
+      <span class="agenda-space-ico"><i data-lucide="${event ? 'door-closed' : 'door-open'}"></i></span>
+      <span class="agenda-space-info">
+        <strong>${escHtml(name)}</strong>
+        <small>${event ? escHtml(event.title) + ' · ' + escHtml(event.timeStart || '') : escHtml(space.description || 'Disponível para reservas')}</small>
+      </span>
+      <span class="agenda-space-status">${event ? 'Ocupado hoje' : 'Livre hoje'}</span>
+    </button>`;
+  }).join('');
+  box.innerHTML = `
+    <div class="agenda-side-head">
+      <div><span class="agenda-side-eyebrow">Instalações do campus</span><h3>Reservas de espaços</h3></div>
+      <div class="agenda-side-head-actions">
+        <button class="btn-icon" onclick="openSpacesManager()" title="Gerenciar espaços"><i data-lucide="settings"></i></button>
+        <button class="btn-icon" onclick="openEventModal(null, agendaTodayISO(), 'RESERVA')" title="Nova reserva"><i data-lucide="plus"></i></button>
+      </div>
+    </div>
+    <div class="agenda-space-list">${rows || '<div class="agenda-side-empty"><p>Nenhum espaço cadastrado.</p></div>'}</div>
+    <button class="btn-secondary btn-block" onclick="openEventModal(null, agendaTodayISO(), 'RESERVA')"><i data-lucide="calendar-plus"></i> Solicitar reserva de sala</button>`;
+  if (window.lucide) lucide.createIcons();
+}
+
+let spaceRemovedIds = [];
+
+function spaceManagerRowHTML(space) {
+  return `<div class="space-manager-row" data-id="${space.id || ''}">
+    <input type="text" class="space-name" value="${escHtml(space.name || '')}" placeholder="Nome do espaço">
+    <input type="text" class="space-desc" value="${escHtml(space.description || '')}" placeholder="Descrição / uso">
+    <button type="button" class="btn-icon danger" onclick="removeSpaceDraft(this)" title="Remover espaço"><i data-lucide="trash-2"></i></button>
+  </div>`;
+}
+
+async function openSpacesManager() {
+  spaceRemovedIds = [];
+  try {
+    const spaces = await apiGet('/spaces');
+    window.apiSpaces = Array.isArray(spaces) ? spaces : [];
+  } catch (e) { window.apiSpaces = window.apiSpaces || []; }
+  const list = (window.apiSpaces || []).map(spaceManagerRowHTML).join('');
+  document.getElementById('modalTitle').textContent = 'Espaços reserváveis';
+  document.getElementById('modalBody').innerHTML = `
+    <div class="space-manager">
+      <p class="space-manager-hint">Edite os nomes, descrições ou remova espaços. Os eventos já criados mantêm o local registrado.</p>
+      <div id="spaceManagerList" class="space-manager-list">${list || '<div class="min-muted" style="padding:10px 0">Nenhum espaço cadastrado.</div>'}</div>
+      <button type="button" class="btn-ghost btn-sm" onclick="addSpaceDraftRow()"><i data-lucide="plus"></i> Adicionar espaço</button>
+      <div class="modal-footer" style="padding:16px 0 0;border-top:1px solid var(--border);margin-top:14px">
+        <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+        <button class="btn-primary" onclick="saveSpacesManager()"><i data-lucide="save"></i> Salvar espaços</button>
+      </div>
+    </div>`;
+  openModal();
+  const modalEl = document.querySelector('#modalOverlay .modal');
+  if (modalEl) modalEl.classList.add('modal-lg');
+  if (window.lucide) lucide.createIcons();
+}
+
+function addSpaceDraftRow() {
+  const list = document.getElementById('spaceManagerList');
+  if (!list) return;
+  if (list.querySelector('.min-muted')) list.innerHTML = '';
+  list.insertAdjacentHTML('beforeend', spaceManagerRowHTML({ name: '', description: '', id: '' }));
+  if (window.lucide) lucide.createIcons();
+}
+
+async function removeSpaceDraft(btn) {
+  const row = btn.closest('.space-manager-row');
+  if (!row) return;
+  const id = row.dataset.id;
+  const name = (row.querySelector('.space-name') || {}).value || 'este espaço';
+  if (id) {
+    if (!(await appConfirm(`Remover o espaço "${name}"?`, { title: 'Remover espaço', confirmLabel: 'Remover', icon: 'door-open', tone: 'danger' }))) return;
+    spaceRemovedIds.push(id);
+  }
+  row.remove();
+}
+
+async function saveSpacesManager() {
+  const list = document.getElementById('spaceManagerList');
+  if (!list) return;
+  const rows = [...list.querySelectorAll('.space-manager-row')];
+  try {
+    for (const row of rows) {
+      const id = row.dataset.id;
+      const name = (row.querySelector('.space-name') || {}).value.trim();
+      const description = (row.querySelector('.space-desc') || {}).value.trim();
+      if (!name) continue;
+      if (id) await apiPost(`/spaces/${id}/update`, { name, description });
+      else await apiPost('/spaces', { name, description });
+    }
+    for (const id of spaceRemovedIds) await apiPost(`/spaces/${id}/delete`, {});
+    const spaces = await apiGet('/spaces');
+    window.apiSpaces = Array.isArray(spaces) ? spaces : [];
+    spaceRemovedIds = [];
+    closeModal();
+    renderEvents();
+    showToast('Espaços atualizados', 'success');
+  } catch (e) {
+    showToast((e && e.message) || 'Não foi possível salvar os espaços', 'error');
+  }
+}
+
+function renderAgendaSide() {
+  renderAgendaNextPanel(agendaNextCulto());
+  renderAgendaSpacesPanel();
+}
+
+function icalEscape(value) {
+  return String(value || '').replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/,/g, '\\,').replace(/;/g, '\\;');
+}
+
+function exportAgendaICS() {
+  const items = agendaFilteredItems();
+  if (!items.length) { showToast('Nenhum compromisso para exportar', 'warning'); return; }
+  const lines = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Igreja Shallom//Agenda//PT-BR',
+    'CALSCALE:GREGORIAN',
+  ];
+  items.forEach(item => {
+    const d = String(item.date || '').replace(/-/g, '');
+    if (!d) return;
+    const start = String(item.timeStart || '00:00').replace(':', '').slice(0, 4);
+    let end = String(item.timeEnd || '').replace(':', '').slice(0, 4);
+    if (!end) {
+      const dt = new Date(agendaParseDate(item.date));
+      const parts = String(item.timeStart || '00:00').split(':').map(Number);
+      dt.setHours(parts[0] || 0, (parts[1] || 0) + 90, 0, 0);
+      end = agendaPad(dt.getHours()) + agendaPad(dt.getMinutes());
+    }
+    lines.push(
+      'BEGIN:VEVENT',
+      `UID:${item.source}-${item.id}@igrejashallom`,
+      `DTSTART:${d}T${start}00`,
+      `DTEND:${d}T${end}00`,
+      `SUMMARY:${icalEscape(item.title)}`,
+      `LOCATION:${icalEscape(item.location || '')}`,
+      `DESCRIPTION:${icalEscape(item.sectorLabel || '')}`,
+      'END:VEVENT'
+    );
+  });
+  lines.push('END:VCALENDAR');
+  const blob = new Blob([lines.join('\r\n')], { type: 'text/calendar;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'agenda-igreja-shallom.ics';
+  a.click();
+  URL.revokeObjectURL(a.href);
+  showToast('Agenda exportada para o Google Agenda', 'success');
+}
+
+// ===== BATISMOS =====
+let baptismRecords = [];
+let baptismEditId = null;
+let baptismPrefillPersonId = null;
+
+async function loadBaptisms(force) {
+  if (baptismRecords.length && !force) return;
+  try {
+    const rows = await apiGet('/baptisms');
+    baptismRecords = Array.isArray(rows) ? rows : [];
+  } catch (e) { baptismRecords = []; }
+}
+
+async function renderBaptisms() {
+  await loadBaptisms(true);
+  const search = (document.getElementById('baptismSearch') || {}).value || '';
+  const q = search.trim().toLowerCase();
+  const list = baptismRecords.filter(b => {
+    if (!q) return true;
+    return `${b.name || ''} ${b.email || ''} ${b.cellPhone || ''} ${b.residencePhone || ''}`.toLowerCase().includes(q);
+  });
+  const year = String(new Date().getFullYear());
+  setText('baptismKpiTotal', baptismRecords.length);
+  setText('baptismKpiYear', baptismRecords.filter(b => String(b.baptismDate || '').startsWith(year)).length);
+  setText('baptismKpiLinked', baptismRecords.filter(b => !!b.personId).length);
+  setText('baptismCount', `${list.length} ficha${list.length === 1 ? '' : 's'}`);
+  const tbody = document.getElementById('baptismsTableBody');
+  if (!tbody) return;
+  if (!list.length) {
+    tbody.innerHTML = '<tr><td colspan="6"><div class="empty-state"><i data-lucide="droplets"></i><p>Nenhuma ficha de batismo encontrada.</p></div></td></tr>';
+  } else {
+    tbody.innerHTML = list.map(b => {
+      const status = b.status === 'ACTIVE' ? '<span class="pill pill-green">Ativa</span>' : '<span class="pill pill-gray">Arquivada</span>';
+      return `<tr>
+        <td><div class="min-member"><span class="min-member-av">${escHtml(initials(b.name))}</span><div><strong>${escHtml(b.name)}</strong><small>${escHtml(b.profession || 'Ficha de batismo')}</small></div></div></td>
+        <td>${b.baptismDate ? escHtml(formatDate(b.baptismDate)) : '—'}</td>
+        <td><div class="min-contact">${escHtml(b.email || '—')}<br><small>${escHtml(b.cellPhone || b.residencePhone || '—')}</small></div></td>
+        <td>${b.person ? `<span class="pill pill-blue">${escHtml(b.person.name)}</span>` : '<span class="pill pill-gray">Sem vínculo</span>'}</td>
+        <td>${status}</td>
+        <td class="pactions">
+          <button class="btn-icon" onclick="openBaptismForm('${b.id}')" title="Editar ficha"><i data-lucide="pencil"></i></button>
+          <button class="btn-icon danger" onclick="deleteBaptismRecord('${b.id}')" title="Excluir ficha"><i data-lucide="trash-2"></i></button>
+        </td>
+      </tr>`;
+    }).join('');
+  }
+  if (window.lucide) lucide.createIcons();
+}
+
+function openBaptismForm(id, personId) {
+  baptismEditId = id || null;
+  baptismPrefillPersonId = personId || null;
+  navigateTo('batismo-form');
+}
+
+async function openBaptismFormForMember(personId) {
+  await loadBaptisms(true);
+  const existing = baptismRecords.find(b => b.personId === personId);
+  if (existing) openBaptismForm(existing.id);
+  else openBaptismForm(null, personId);
+}
+
+function renderBaptismFormPage() {
+  const record = baptismEditId ? baptismRecords.find(b => b.id === baptismEditId) : null;
+  const prefill = !record && baptismPrefillPersonId ? (mockMembers || []).find(p => p.id === baptismPrefillPersonId) : null;
+  setText('bmTitle', record ? 'Editar ficha de batismo' : 'Nova ficha de batismo');
+  setText('bmEyebrow', record ? 'Edição de registro' : 'Novo registro');
+  setText('bmSaveLabel', record ? 'Salvar alterações' : 'Salvar ficha');
+  const select = document.getElementById('bmPerson');
+  if (select) {
+    const options = (mockMembers || []).slice().sort((a, b) => String(a.name).localeCompare(String(b.name), 'pt-BR'))
+      .map(p => `<option value="${p.id}">${escHtml(p.name)}</option>`).join('');
+    select.innerHTML = '<option value="">Sem vínculo / pessoa não cadastrada</option>' + options;
+    select.value = record ? (record.personId || '') : (prefill ? prefill.id : '');
+  }
+  const values = record || prefill || {};
+  const get = (key) => {
+    if (record) {
+      const map = { name: 'name', motherName: 'motherName', fatherName: 'fatherName', birthdate: 'birthdate', maritalStatus: 'maritalStatus', cpf: 'cpf', rg: 'rg', birthplace: 'birthplace', email: 'email', profession: 'profession', education: 'education', address: 'address', zipCode: 'zipCode', neighborhood: 'neighborhood', city: 'city', state: 'state', residencePhone: 'residencePhone', cellPhone: 'cellPhone', conversionDate: 'conversionDate', baptismDate: 'baptismDate', spouseName: 'spouseName', previouslyMarried: 'previouslyMarried', civilMarriageDate: 'civilMarriageDate', religiousMarriageDate: 'religiousMarriageDate', children: 'children', notes: 'notes', signature: 'signature' };
+      return record[map[key]] || '';
+    }
+    const memberMap = {
+      name: 'name', motherName: 'motherName', fatherName: 'fatherName', birthdate: 'birthdate',
+      maritalStatus: 'maritalStatus', cpf: 'cpf', rg: 'rg', birthplace: 'birthplace', email: 'email',
+      profession: 'profession', education: 'education', address: 'address', zipCode: 'zipCode',
+      neighborhood: 'neighborhood', city: 'city', state: 'state', residencePhone: 'residencePhone',
+      cellPhone: 'phone', conversionDate: 'conversionDate', baptismDate: 'baptismDate',
+      spouseName: 'spouseName', previouslyMarried: 'previouslyMarried', civilMarriageDate: 'civilMarriageDate',
+      religiousMarriageDate: 'religiousMarriageDate', children: 'children', notes: 'membershipNotes',
+    };
+    return memberMap[key] ? (values[memberMap[key]] || '') : '';
+  };
+  const ids = {
+    name: 'bmName', motherName: 'bmMotherName', fatherName: 'bmFatherName', birthdate: 'bmBirthdate',
+    maritalStatus: 'bmMaritalStatus', cpf: 'bmCpf', rg: 'bmRg', birthplace: 'bmBirthplace',
+    email: 'bmEmail', profession: 'bmProfession', education: 'bmEducation', address: 'bmAddress',
+    zipCode: 'bmZipCode', neighborhood: 'bmNeighborhood', city: 'bmCity', state: 'bmState',
+    residencePhone: 'bmResidencePhone', cellPhone: 'bmCellPhone', conversionDate: 'bmConversionDate',
+    baptismDate: 'bmBaptismDate', spouseName: 'bmSpouseName', previouslyMarried: 'bmPreviouslyMarried',
+    civilMarriageDate: 'bmCivilMarriageDate', religiousMarriageDate: 'bmReligiousMarriageDate',
+    children: 'bmChildren', notes: 'bmNotes', signature: 'bmSignature',
+  };
+  Object.keys(ids).forEach(key => {
+    const el = document.getElementById(ids[key]);
+    if (el) el.value = get(key);
+  });
+  refreshIcons();
+}
+
+function prefillBaptismFromMember(personId) {
+  if (!personId) return;
+  const p = (mockMembers || []).find(m => m.id === personId);
+  if (!p) return;
+  const map = {
+    bmName: p.name, bmMotherName: p.motherName, bmFatherName: p.fatherName, bmBirthdate: p.birthdate,
+    bmMaritalStatus: p.maritalStatus, bmCpf: p.cpf, bmRg: p.rg, bmBirthplace: p.birthplace,
+    bmEmail: p.email && p.email !== '—' ? p.email : '', bmProfession: p.profession, bmEducation: p.education,
+    bmAddress: p.address, bmZipCode: p.zipCode, bmNeighborhood: p.neighborhood, bmCity: p.city, bmState: p.state,
+    bmResidencePhone: p.residencePhone, bmCellPhone: p.phone && p.phone !== '—' ? p.phone : '',
+    bmConversionDate: p.conversionDate, bmBaptismDate: p.baptismDate && p.baptismDate !== '—' ? p.baptismDate : '',
+    bmSpouseName: p.spouseName, bmPreviouslyMarried: p.previouslyMarried,
+    bmCivilMarriageDate: p.civilMarriageDate, bmReligiousMarriageDate: p.religiousMarriageDate,
+    bmChildren: p.children, bmNotes: p.membershipNotes,
+  };
+  Object.keys(map).forEach(id => {
+    const el = document.getElementById(id);
+    if (el && !el.value) el.value = map[id] || '';
+  });
+}
+
+async function saveBaptismForm() {
+  const getVal = id => (document.getElementById(id) || {}).value || '';
+  const name = getVal('bmName').trim();
+  if (!name) { showToast('Informe o nome completo', 'error'); document.getElementById('bmName')?.focus(); return; }
+  const payload = {
+    name,
+    personId: getVal('bmPerson') || '',
+    motherName: getVal('bmMotherName'), fatherName: getVal('bmFatherName'), birthdate: getVal('bmBirthdate'),
+    maritalStatus: getVal('bmMaritalStatus'), cpf: getVal('bmCpf'), rg: getVal('bmRg'), birthplace: getVal('bmBirthplace'),
+    email: getVal('bmEmail'), profession: getVal('bmProfession'), education: getVal('bmEducation'),
+    address: getVal('bmAddress'), zipCode: getVal('bmZipCode'), neighborhood: getVal('bmNeighborhood'),
+    city: getVal('bmCity'), state: getVal('bmState'), residencePhone: getVal('bmResidencePhone'), cellPhone: getVal('bmCellPhone'),
+    conversionDate: getVal('bmConversionDate'), baptismDate: getVal('bmBaptismDate'), spouseName: getVal('bmSpouseName'),
+    previouslyMarried: getVal('bmPreviouslyMarried'), civilMarriageDate: getVal('bmCivilMarriageDate'),
+    religiousMarriageDate: getVal('bmReligiousMarriageDate'), children: getVal('bmChildren'), notes: getVal('bmNotes'),
+    signature: getVal('bmSignature'), actorId: currentUser ? currentUser.id : undefined,
+  };
+  try {
+    if (baptismEditId) await apiPost(`/baptisms/${baptismEditId}/update`, payload);
+    else await apiPost('/baptisms', payload);
+    await hydrateFromApi();
+    await loadBaptisms(true);
+    navigateTo('batismos');
+    showToast(baptismEditId ? 'Ficha de batismo atualizada!' : 'Ficha de batismo criada!', 'success');
+  } catch (e) {
+    showToast((e && e.message) || 'Não foi possível salvar a ficha', 'error');
+  }
+}
+
+async function deleteBaptismRecord(id) {
+  const record = baptismRecords.find(b => b.id === id);
+  if (!record) return;
+  if (!(await appConfirm(`Excluir a ficha de batismo de "${record.name}"?`, { title: 'Excluir ficha', confirmLabel: 'Excluir', icon: 'delete', tone: 'danger' }))) return;
+  try {
+    await apiPost(`/baptisms/${id}/delete`, {});
+    await loadBaptisms(true);
+    renderBaptisms();
+    showToast('Ficha excluída', 'success');
+  } catch (e) {
+    showToast((e && e.message) || 'Não foi possível excluir a ficha', 'error');
+  }
+}
+
+// ===== ATAS =====
+let minutes = [];
+let minuteEditId = null;
+let ataViewId = null;
+
+async function loadMinutes(force) {
+  if (minutes.length && !force) return;
+  try {
+    const rows = await apiGet('/minutes');
+    minutes = Array.isArray(rows) ? rows : [];
+  } catch (e) { minutes = []; }
+}
+
+function minuteTypeLabel(type) {
+  const map = { AGO: 'Assembleia Geral Ordinária', AGE: 'Assembleia Geral Extraordinária', DIRETORIA: 'Reunião de Diretoria', CONSELHO: 'Reunião de Conselho', OUTRA: 'Outra' };
+  return map[String(type || '').toUpperCase()] || type || 'Ata';
+}
+
+function minuteStatusLabel(status) {
+  const s = String(status || '').toUpperCase();
+  if (s === 'APPROVED') return { label: 'Aprovada', cls: 'pill-green' };
+  if (s === 'CANCELED') return { label: 'Cancelada', cls: 'pill-red' };
+  return { label: 'Rascunho', cls: 'pill-orange' };
+}
+
+async function renderMinutes() {
+  await loadMinutes(true);
+  const q = String((document.getElementById('minutesSearch') || {}).value || '').trim().toLowerCase();
+  const list = minutes.filter(m => !q || `${m.number} ${m.title} ${m.agenda || ''} ${m.body || ''}`.toLowerCase().includes(q));
+  setText('minutesCount', `${list.length} ata${list.length === 1 ? '' : 's'}`);
+  const box = document.getElementById('minutesList');
+  if (!box) return;
+  if (!list.length) {
+    box.innerHTML = '<div class="empty-state"><i data-lucide="scroll-text"></i><p>Nenhuma ata registrada.</p></div>';
+  } else {
+    box.innerHTML = list.map(m => {
+      const st = minuteStatusLabel(m.status);
+      const date = m.date ? formatDate(m.date) : '—';
+      return `<div class="minute-card">
+        <span class="minute-number">${escHtml(m.number)}</span>
+        <div class="minute-main">
+          <div class="minute-title">${escHtml(m.title)}</div>
+          <div class="minute-meta">
+            <span><i data-lucide="calendar-days"></i>${escHtml(date)}${m.timeStart ? ' · ' + escHtml(m.timeStart) : ''}</span>
+            <span><i data-lucide="file-text"></i>${escHtml(minuteTypeLabel(m.type))}</span>
+            ${m.attendees ? `<span><i data-lucide="users"></i>${m.attendees} presentes</span>` : ''}
+          </div>
+        </div>
+        <span class="pill ${st.cls}">${st.label}</span>
+        <div class="minute-actions">
+          <button class="btn-icon" onclick="openMinuteDetail('${m.id}')" title="Visualizar"><i data-lucide="eye"></i></button>
+          <button class="btn-icon" onclick="openMinuteForm('${m.id}')" title="Editar"><i data-lucide="pencil"></i></button>
+          <button class="btn-icon danger" onclick="deleteMinute('${m.id}')" title="Excluir"><i data-lucide="trash-2"></i></button>
+        </div>
+      </div>`;
+    }).join('');
+  }
+  if (window.lucide) lucide.createIcons();
+}
+
+function openMinuteForm(id) {
+  minuteEditId = id || null;
+  navigateTo('ata-form');
+}
+
+function renderMinuteFormPage() {
+  const m = minuteEditId ? minutes.find(x => x.id === minuteEditId) : null;
+  setText('ataTitle', m ? 'Editar ata' : 'Nova ata');
+  setText('ataEyebrow', m ? 'Edição de registro' : 'Novo registro');
+  setText('ataSaveLabel', m ? 'Salvar alterações' : 'Salvar ata');
+  const values = {
+    ataNumber: m ? m.number : '',
+    ataType: m ? m.type : 'AGO',
+    ataMeetingTitle: m ? m.title : '',
+    ataDate: m ? m.date : agendaTodayISO(),
+    ataTime: m ? (m.timeStart || '') : '19:00',
+    ataLocation: m ? (m.location || '') : 'Avenida Carlos Chagas, 577, Cidade Nobre, Ipatinga-MG',
+    ataPresident: m ? (m.president || '') : '',
+    ataSecretary: m ? (m.secretary || '') : '',
+    ataAttendees: m && m.attendees != null ? m.attendees : '',
+    ataStatus: m ? (m.status || 'DRAFT') : 'DRAFT',
+    ataAgenda: m ? (m.agenda || '') : '',
+    ataBody: m ? (m.body || '') : '',
+    ataDecisions: m ? (m.decisions || '') : '',
+  };
+  Object.keys(values).forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = values[id];
+  });
+  refreshIcons();
+}
+
+async function saveMinuteForm() {
+  const getVal = id => (document.getElementById(id) || {}).value || '';
+  const payload = {
+    number: getVal('ataNumber').trim(),
+    type: getVal('ataType'),
+    title: getVal('ataMeetingTitle').trim(),
+    date: getVal('ataDate'),
+    timeStart: getVal('ataTime'),
+    location: getVal('ataLocation').trim(),
+    president: getVal('ataPresident').trim(),
+    secretary: getVal('ataSecretary').trim(),
+    attendees: getVal('ataAttendees') || null,
+    status: getVal('ataStatus'),
+    agenda: getVal('ataAgenda').trim(),
+    body: getVal('ataBody').trim(),
+    decisions: getVal('ataDecisions').trim(),
+    actorId: currentUser ? currentUser.id : undefined,
+  };
+  if (!payload.number) { showToast('Informe o número da ata', 'error'); return; }
+  if (!payload.title) { showToast('Informe o título da ata', 'error'); return; }
+  if (!payload.date) { showToast('Informe a data da ata', 'error'); return; }
+  if (!payload.body) { showToast('Informe o texto da ata', 'error'); return; }
+  try {
+    if (minuteEditId) await apiPost(`/minutes/${minuteEditId}/update`, payload);
+    else await apiPost('/minutes', payload);
+    await loadMinutes(true);
+    navigateTo('atas');
+    showToast(minuteEditId ? 'Ata atualizada!' : 'Ata registrada!', 'success');
+  } catch (e) {
+    showToast((e && e.message) || 'Não foi possível salvar a ata', 'error');
+  }
+}
+
+function openMinuteDetail(id) {
+  ataViewId = id;
+  navigateTo('ata-view');
+}
+
+function renderMinuteViewPage() {
+  const m = minutes.find(x => x.id === ataViewId);
+  if (!m) { navigateTo('atas'); return; }
+  const st = minuteStatusLabel(m.status);
+  setText('ataViewTitle', m.title);
+  setText('ataViewEyebrow', minuteTypeLabel(m.type));
+  setText('ataViewSub', `${formatDate(m.date)}${m.timeStart ? ' · ' + m.timeStart : ''}${m.location ? ' · ' + m.location : ''}`);
+  const box = document.getElementById('ataViewContent');
+  if (!box) return;
+  box.innerHTML = `
+    <div class="ata-sheet">
+      <div class="ata-sheet-head">
+        <div>
+          <span class="ata-sheet-number">Ata ${escHtml(m.number)}</span>
+          <strong>${escHtml(m.title)}</strong>
+          <small>${escHtml(minuteTypeLabel(m.type))}</small>
+        </div>
+        <span class="pill ${st.cls}">${st.label}</span>
+      </div>
+      <div class="ata-sheet-meta">
+        <div><span>Data</span><strong>${escHtml(formatDate(m.date))}</strong></div>
+        <div><span>Horário</span><strong>${escHtml(m.timeStart || '—')}</strong></div>
+        <div><span>Local</span><strong>${escHtml(m.location || '—')}</strong></div>
+        <div><span>Presidente</span><strong>${escHtml(m.president || '—')}</strong></div>
+        <div><span>Secretário(a)</span><strong>${escHtml(m.secretary || '—')}</strong></div>
+        <div><span>Presentes</span><strong>${m.attendees || '—'}</strong></div>
+      </div>
+      ${m.agenda ? `<div class="ata-sheet-section"><h3>Ordem do dia</h3><p>${escHtml(m.agenda)}</p></div>` : ''}
+      <div class="ata-sheet-section"><h3>Texto da ata</h3><div class="ata-sheet-body">${escHtml(m.body)}</div></div>
+      ${m.decisions ? `<div class="ata-sheet-section"><h3>Decisões e deliberações</h3><p>${escHtml(m.decisions)}</p></div>` : ''}
+      <div class="ata-sheet-signatures">
+        <div><span>Secretário(a)</span><strong>${escHtml(m.secretary || '')}</strong></div>
+        <div><span>Presidente</span><strong>${escHtml(m.president || '')}</strong></div>
+      </div>
+      <div class="ata-sheet-footer">
+        <button class="btn-danger" onclick="deleteMinute('${m.id}')"><i data-lucide="trash-2"></i> Excluir ata</button>
+        <span>Registro interno — Igreja Batista Nacional Shallom Cidade Nobre</span>
+      </div>
+    </div>`;
+  if (window.lucide) lucide.createIcons();
+}
+
+async function deleteMinute(id) {
+  const m = minutes.find(x => x.id === id);
+  if (!m) return;
+  if (!(await appConfirm(`Excluir a ata ${m.number} — "${m.title}"?`, { title: 'Excluir ata', confirmLabel: 'Excluir', icon: 'delete', tone: 'danger' }))) return;
+  try {
+    await apiPost(`/minutes/${id}/delete`, {});
+    await loadMinutes(true);
+    closeModal();
+    const viewActive = document.getElementById('section-ata-view') && document.getElementById('section-ata-view').classList.contains('active');
+    if (viewActive) navigateTo('atas');
+    else renderMinutes();
+    showToast('Ata excluída', 'success');
+  } catch (e) {
+    showToast((e && e.message) || 'Não foi possível excluir a ata', 'error');
+  }
+}
+
+function printMinute(id) {
+  const m = minutes.find(x => x.id === id);
+  if (!m) return;
+  const w = window.open('', '_blank', 'width=800,height=900');
+  if (!w) { showToast('Permita pop-ups para imprimir', 'warning'); return; }
+  w.document.write(`<html><head><title>Ata ${escHtml(m.number)}</title><style>body{font-family:Arial,sans-serif;margin:40px;line-height:1.6;color:#111}h1{font-size:18px}h2{font-size:16px}small{color:#555}.meta{margin:16px 0;font-size:13px}.body{white-space:pre-wrap;margin-top:20px;font-size:13px}</style></head><body>
+    <h1>Igreja Batista Nacional Shallom Cidade Nobre</h1>
+    <h2>Ata ${escHtml(m.number)} — ${escHtml(m.title)}</h2>
+    <div class="meta">${escHtml(minuteTypeLabel(m.type))} · ${escHtml(formatDate(m.date))}${m.timeStart ? ' · ' + escHtml(m.timeStart) : ''}<br>${escHtml(m.location || '')}<br>${m.president ? 'Presidente: ' + escHtml(m.president) : ''}${m.secretary ? ' · Secretário(a): ' + escHtml(m.secretary) : ''}</div>
+    <div class="body">${escHtml(m.body)}</div>
+    ${m.decisions ? '<h3>Decisões</h3><div class="body">' + escHtml(m.decisions) + '</div>' : ''}
+  </body></html>`);
+  w.document.close();
+  w.focus();
+  setTimeout(() => w.print(), 300);
+}
+
+// ===== IMPORTAR / EXPORTAR PLANILHAS =====
+function agendaRowGet(row, names) {
+  const keys = Object.keys(row || {});
+  for (const name of names) {
+    const target = normHeader(name);
+    const key = keys.find(k => normHeader(k) === target || normHeader(k).includes(target));
+    if (key && row[key] !== '' && row[key] != null) return row[key];
+  }
+  return '';
+}
+
+function normHeader(value) {
+  return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+
+function sheetDate(value) {
+  if (!value) return '';
+  if (value instanceof Date && !isNaN(value)) {
+    return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
+  }
+  const s = String(value).trim();
+  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (m) return `${m[3]}-${String(m[2]).padStart(2, '0')}-${String(m[1]).padStart(2, '0')}`;
+  return '';
+}
+
+function sheetPhone(value) {
+  const raw = String(value || '').trim();
+  const digits = raw.replace(/\D/g, '');
+  if (digits.length === 11) return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+  if (digits.length === 10) return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+  return raw;
+}
+
+function maritalFromCode(code) {
+  const c = String(code || '').trim().toUpperCase();
+  if (c === 'C') return 'Casado(a)';
+  if (c === 'S') return 'Solteiro(a)';
+  if (c === 'V') return 'Viúvo(a)';
+  if (c === 'D') return 'Divorciado(a)';
+  return '';
+}
+
+function readSheetFile(file) {
+  return new Promise((resolve, reject) => {
+    if (!file) { reject(new Error('Nenhum arquivo selecionado')); return; }
+    if (typeof XLSX === 'undefined') { reject(new Error('Leitor de planilhas não carregado')); return; }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const wb = XLSX.read(e.target.result, { type: 'array', cellDates: true });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(ws, { defval: '', raw: false });
+        resolve(rows);
+      } catch (err) { reject(err); }
+    };
+    reader.onerror = () => reject(new Error('Não foi possível ler o arquivo'));
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+function downloadSheet(rows, sheetName, fileName) {
+  if (typeof XLSX === 'undefined') { showToast('Biblioteca de planilhas não carregada', 'error'); return; }
+  const ws = XLSX.utils.json_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, sheetName);
+  XLSX.writeFile(wb, fileName);
+}
+
+async function importPeopleFile(input) {
+  const file = input && input.files ? input.files[0] : null;
+  if (!file) return;
+  try {
+    const rows = await readSheetFile(file);
+    const existing = new Set((mockMembers || []).map(m => normHeader(m.name)));
+    let created = 0, skipped = 0, errors = 0;
+    for (const row of rows) {
+      const name = String(agendaRowGet(row, ['Nome', 'Nome completo', 'Membro']) || '').trim();
+      if (!name) { skipped++; continue; }
+      if (existing.has(normHeader(name))) { skipped++; continue; }
+      const payload = {
+        name,
+        email: String(agendaRowGet(row, ['E-mail', 'Email']) || '').trim(),
+        phone: sheetPhone(agendaRowGet(row, ['Tel.Cel.', 'Telefone', 'Celular', 'Fone'])),
+        birthdate: sheetDate(agendaRowGet(row, ['Dt.Nasc.', 'Data de nascimento', 'Nascimento'])),
+        address: String(agendaRowGet(row, ['Endereço', 'Endereco']) || '').trim(),
+        maritalStatus: String(agendaRowGet(row, ['Estado civil', 'Est.C.', 'Est C']) || '').trim() || maritalFromCode(agendaRowGet(row, ['Est.C.', 'Est C'])),
+        membershipRecordNumber: String(agendaRowGet(row, ['Nº Ata', 'N Ata', 'Ata']) || '').trim(),
+        membershipNotes: 'Importado de planilha em ' + new Date().toLocaleDateString('pt-BR') + '.',
+        membershipRequestStatus: 'APROVADO',
+        createdByRole: apiActorRole(),
+      };
+      try {
+        await apiPost('/people', payload);
+        existing.add(normHeader(name));
+        created++;
+      } catch (e) { errors++; }
+    }
+    await hydrateFromApi();
+    renderMembers();
+    showToast(`Importação concluída: ${created} membros criados, ${skipped} ignorados${errors ? ', ' + errors + ' erros' : ''}`, created ? 'success' : 'warning');
+  } catch (e) {
+    showToast(e.message || 'Não foi possível importar a planilha', 'error');
+  } finally {
+    if (input) input.value = '';
+  }
+}
+
+function exportPeopleXLSX() {
+  const rows = (mockMembers || []).map(m => ({
+    'Nome': m.name,
+    'E-mail': m.email && m.email !== '—' ? m.email : '',
+    'Telefone': m.phone && m.phone !== '—' ? m.phone : '',
+    'Dt.Nasc.': m.birthdate || '',
+    'Estado Civil': m.maritalStatus || '',
+    'Endereço': m.address || '',
+    'Nº Ata': m.membershipRecordNumber || '',
+    'Ministério': m.sector || '',
+    'Cargos': m.positions && m.positions.length ? m.positions.join(', ') : '',
+    'Acesso': m.webAccess ? 'Liberado' : 'Sem acesso',
+    'Membro desde': m.joined || '',
+  }));
+  downloadSheet(rows, 'Membros', 'membros-igreja-shallom.xlsx');
+  showToast(`Planilha exportada com ${rows.length} membros`, 'success');
+}
+
+async function importBaptismsFile(input) {
+  const file = input && input.files ? input.files[0] : null;
+  if (!file) return;
+  try {
+    const rows = await readSheetFile(file);
+    let created = 0, skipped = 0, errors = 0;
+    for (const row of rows) {
+      const name = String(agendaRowGet(row, ['Nome', 'Nome completo']) || '').trim();
+      if (!name) { skipped++; continue; }
+      const baptismDate = sheetDate(agendaRowGet(row, ['Data do Batismo', 'Data batismo', 'Batismo']));
+      if (baptismRecords.some(b => normHeader(b.name) === normHeader(name) && String(b.baptismDate || '') === baptismDate)) { skipped++; continue; }
+      const payload = {
+        name,
+        birthdate: sheetDate(agendaRowGet(row, ['Data Nascimento', 'Dt.Nasc.', 'Nascimento'])),
+        motherName: String(agendaRowGet(row, ['Nome da Mãe', 'Mãe']) || '').trim(),
+        fatherName: String(agendaRowGet(row, ['Nome do Pai', 'Pai']) || '').trim(),
+        maritalStatus: String(agendaRowGet(row, ['Estado Civil']) || '').trim(),
+        cpf: String(agendaRowGet(row, ['CPF']) || '').trim(),
+        rg: String(agendaRowGet(row, ['RG']) || '').trim(),
+        birthplace: String(agendaRowGet(row, ['Naturalidade']) || '').trim(),
+        email: String(agendaRowGet(row, ['E-mail', 'Email']) || '').trim(),
+        profession: String(agendaRowGet(row, ['Profissão', 'Profissao']) || '').trim(),
+        education: String(agendaRowGet(row, ['Escolaridade']) || '').trim(),
+        address: String(agendaRowGet(row, ['Endereço', 'Endereco']) || '').trim(),
+        zipCode: String(agendaRowGet(row, ['CEP', 'Cep']) || '').trim(),
+        neighborhood: String(agendaRowGet(row, ['Bairro']) || '').trim(),
+        city: String(agendaRowGet(row, ['Cidade']) || '').trim(),
+        state: String(agendaRowGet(row, ['Estado']) || '').trim(),
+        residencePhone: sheetPhone(agendaRowGet(row, ['Fone Residencial', 'Telefone residencial'])),
+        cellPhone: sheetPhone(agendaRowGet(row, ['Fone Celular', 'Telefone celular', 'Celular'])),
+        conversionDate: sheetDate(agendaRowGet(row, ['Data da conversão', 'Conversão'])),
+        baptismDate,
+        spouseName: String(agendaRowGet(row, ['Cônjuge', 'Conjuge']) || '').trim(),
+        previouslyMarried: String(agendaRowGet(row, ['Já foi casado', 'Foi casado']) || '').trim(),
+        civilMarriageDate: sheetDate(agendaRowGet(row, ['Data casamento Civil'])),
+        religiousMarriageDate: sheetDate(agendaRowGet(row, ['Data casamento Religioso'])),
+        children: String(agendaRowGet(row, ['Filhos']) || '').trim(),
+        notes: String(agendaRowGet(row, ['Anotações', 'Anotacoes']) || '').trim(),
+        signature: String(agendaRowGet(row, ['Assinatura do candidato', 'Assinatura']) || '').trim(),
+      };
+      try { await apiPost('/baptisms', payload); created++; } catch (e) { errors++; }
+    }
+    await loadBaptisms(true);
+    renderBaptisms();
+    showToast(`Importação concluída: ${created} fichas criadas, ${skipped} ignoradas${errors ? ', ' + errors + ' erros' : ''}`, created ? 'success' : 'warning');
+  } catch (e) {
+    showToast(e.message || 'Não foi possível importar a planilha', 'error');
+  } finally { if (input) input.value = ''; }
+}
+
+function exportBaptismsXLSX() {
+  const rows = baptismRecords.map(b => ({
+    'Nome': b.name,
+    'Nome da Mãe': b.motherName || '',
+    'Nome do Pai': b.fatherName || '',
+    'Data Nascimento': b.birthdate || '',
+    'Estado Civil': b.maritalStatus || '',
+    'CPF': b.cpf || '',
+    'RG': b.rg || '',
+    'Naturalidade': b.birthplace || '',
+    'E-mail': b.email || '',
+    'Profissão': b.profession || '',
+    'Escolaridade': b.education || '',
+    'Endereço': b.address || '',
+    'CEP': b.zipCode || '',
+    'Bairro': b.neighborhood || '',
+    'Cidade': b.city || '',
+    'Estado': b.state || '',
+    'Fone Residencial': b.residencePhone || '',
+    'Fone Celular': b.cellPhone || '',
+    'Data da conversão': b.conversionDate || '',
+    'Data do Batismo': b.baptismDate || '',
+    'Cônjuge': b.spouseName || '',
+    'Já foi casado(a) antes?': b.previouslyMarried || '',
+    'Data casamento Civil': b.civilMarriageDate || '',
+    'Data casamento Religioso': b.religiousMarriageDate || '',
+    'Filhos': b.children || '',
+    'Anotações': b.notes || '',
+  }));
+  downloadSheet(rows, 'Batismos', 'fichas-batismo-shallom.xlsx');
+  showToast(`Planilha exportada com ${rows.length} fichas`, 'success');
+}
+
+async function importMinutesFile(input) {
+  const file = input && input.files ? input.files[0] : null;
+  if (!file) return;
+  try {
+    const rows = await readSheetFile(file);
+    let created = 0, skipped = 0, errors = 0;
+    for (const row of rows) {
+      const number = String(agendaRowGet(row, ['Número', 'Numero', 'Nº', 'N']) || '').trim();
+      const title = String(agendaRowGet(row, ['Título', 'Titulo', 'Assunto']) || '').trim();
+      const date = sheetDate(agendaRowGet(row, ['Data']));
+      const body = String(agendaRowGet(row, ['Texto da ata', 'Texto', 'Ata', 'Conteúdo', 'Conteudo']) || '').trim();
+      if (!number || !title || !date || !body) { skipped++; continue; }
+      if (minutes.some(m => String(m.number) === number && m.date === date)) { skipped++; continue; }
+      const payload = {
+        number, title, date, body,
+        type: String(agendaRowGet(row, ['Tipo']) || 'AGO').trim(),
+        timeStart: String(agendaRowGet(row, ['Horário', 'Horario']) || '').trim(),
+        location: String(agendaRowGet(row, ['Local']) || '').trim(),
+        president: String(agendaRowGet(row, ['Presidente']) || '').trim(),
+        secretary: String(agendaRowGet(row, ['Secretário', 'Secretario']) || '').trim(),
+        attendees: String(agendaRowGet(row, ['Presentes', 'Nº de presentes']) || '').trim() || null,
+        agenda: String(agendaRowGet(row, ['Ordem do dia']) || '').trim(),
+        decisions: String(agendaRowGet(row, ['Decisões', 'Decisoes']) || '').trim(),
+        status: String(agendaRowGet(row, ['Status']) || 'APPROVED').toUpperCase(),
+      };
+      try { await apiPost('/minutes', payload); created++; } catch (e) { errors++; }
+    }
+    await loadMinutes(true);
+    renderMinutes();
+    showToast(`Importação concluída: ${created} atas criadas, ${skipped} ignoradas${errors ? ', ' + errors + ' erros' : ''}`, created ? 'success' : 'warning');
+  } catch (e) {
+    showToast(e.message || 'Não foi possível importar a planilha', 'error');
+  } finally { if (input) input.value = ''; }
+}
+
+function exportMinutesXLSX() {
+  const rows = minutes.map(m => ({
+    'Número': m.number,
+    'Título': m.title,
+    'Tipo': m.type,
+    'Data': m.date,
+    'Horário': m.timeStart || '',
+    'Local': m.location || '',
+    'Presidente': m.president || '',
+    'Secretário': m.secretary || '',
+    'Presentes': m.attendees || '',
+    'Ordem do dia': m.agenda || '',
+    'Texto da ata': m.body || '',
+    'Decisões': m.decisions || '',
+    'Status': m.status,
+  }));
+  downloadSheet(rows, 'Atas', 'atas-igreja-shallom.xlsx');
+  showToast(`Planilha exportada com ${rows.length} atas`, 'success');
 }
 
 // ===== PESSOAS & MEMBROS =====
@@ -823,7 +2313,7 @@ let peopleTab = 'todos';
 let peopleSort = 'recentes';
 let peoplePage = 1;
 let selectedMemberId = 8;
-const PEOPLE_PAGE_SIZE = 5;
+const PEOPLE_PAGE_SIZE = 12;
 
 function memberStatusInfo(m) {
   if (m.pastoral) return { label: 'Corpo Pastoral', cls: 'pill-blue' };
@@ -923,7 +2413,7 @@ function filterPeople() {
     if (sector && m.sector !== sector) return false;
     if (statusF && (m.status || 'ativo') !== statusF) return false;
     if (q) {
-      const hay = [m.name, m.email, m.phone, m.sector, m.role, (m.tags || []).join(' '), (m.cell && m.cell.name) || ''].join(' ').toLowerCase();
+      const hay = [m.name, m.email, m.phone, m.sector, m.role, m.position, (m.tags || []).join(' ')].join(' ').toLowerCase();
       if (!hay.includes(q)) return false;
     }
     return true;
@@ -960,8 +2450,9 @@ function renderPeopleTable() {
       const ativo = m.status === 'ativo';
       const att = m.attendance || 0;
       const attCls = att >= 85 ? 'att-hi' : att >= 60 ? 'att-md' : 'att-lo';
-      const tags = (m.tags && m.tags.length ? m.tags : [m.sector]).map((t, i) =>
+      const tags = (m.tags && m.tags.length ? m.tags : [m.sector || 'Sem ministério']).map((t, i) =>
         `<span class="mtag ${i ? 'mtag-2' : ''}">${t}</span>`).join('');
+      const contact = [m.email, m.phone].filter(v => v && v !== '—').join(' · ') || 'Sem contato cadastrado';
       const sel = m.id === selectedMemberId;
       return `
         <tr class="prow ${sel ? 'selected' : ''}" onclick="selectMember('${m.id}')">
@@ -973,16 +2464,15 @@ function renderPeopleTable() {
               <span class="pm-av">${initials(m.name)}${ativo ? '<span class="pm-dot"></span>' : ''}</span>
               <div>
                 <div class="pm-name">${m.name}${m.lider ? ' <span class="lider-tag">Líder</span>' : ''}</div>
-                <div class="pm-sub">${m.email} · ${m.phone}</div>
+                <div class="pm-sub">${contact}</div>
               </div>
             </div>
           </td>
           <td><span class="pill ${st.cls}">${st.label}</span></td>
           <td><div class="mtags">${tags}</div></td>
-          <td>
-            <div class="cell-name">${(m.cell && m.cell.name) || 'Sem célula'}</div>
-            <div class="cell-sub">${(m.cell && m.cell.leader) || '—'}</div>
-          </td>
+          <td>${m.webAccess
+            ? '<span class="pill pill-green">Liberado</span>'
+            : '<span class="pill pill-gray">Sem acesso</span>'}</td>
           <td><span class="att ${attCls}"><i data-lucide="trending-up"></i>${att}%</span></td>
           <td class="pactions" onclick="event.stopPropagation()">
             <button class="btn-icon" onclick="selectMember('${m.id}')" title="Ver ficha"><i data-lucide="eye"></i></button>
@@ -1014,11 +2504,18 @@ function selectMember(id) {
 
 function memberTimeline(m) {
   const items = [];
-  const ministry = (m.tags && m.tags[0]) || m.sector;
-  if (m.voluntario) items.push({ tone: 'green', title: 'Escalado no Culto Domingo Noite', sub: `Ministério: ${ministry} · Equipe das 18h`, meta: 'Há 2 dias · 100% Confirmado', metaCls: '' });
-  const attOk = (m.attendance || 0) >= 80;
-  items.push({ tone: attOk ? 'green' : 'amber', title: 'Presença no Ensaio Geral', sub: `Ministério: ${ministry} · Ensaio de quarta`, meta: `Há 3 dias · ${attOk ? 'Presente' : 'Ausente'}`, metaCls: attOk ? '' : 'm-amber' });
-  items.push({ tone: 'blue', title: 'Inscrição na Conferência Shallom 2026', sub: 'Rede de Membros · Inscrição #4892-A', meta: 'Há 12 dias', metaCls: 'm-blue' });
+  if (m.joined) {
+    items.push({ tone: 'blue', title: 'Cadastro na igreja', sub: m.sector || 'Membro comum', meta: `Desde ${formatDate(m.joined)}`, metaCls: 'm-blue' });
+  }
+  if (m.position && m.sector) {
+    items.push({ tone: 'green', title: `Serve como ${m.position}`, sub: m.sector, meta: 'Ministério ativo', metaCls: '' });
+  }
+  if (m.webAccess) {
+    items.push({ tone: 'green', title: 'Acesso ao sistema liberado', sub: 'Painel web', meta: 'Ativo', metaCls: '' });
+  }
+  if (!items.length) {
+    items.push({ tone: 'blue', title: 'Sem histórico registrado', sub: 'Nenhuma atividade registrada até o momento', meta: '—', metaCls: '' });
+  }
   return items;
 }
 
@@ -1032,12 +2529,10 @@ function renderMemberProfile() {
   }
   selectedMemberId = m.id;
   const st = memberStatusInfo(m);
-  const att = m.attendance || 0;
-  const attCls = att >= 85 ? 'att-hi' : att >= 60 ? 'att-md' : 'att-lo';
-  const statusLine = m.pastoral ? 'Membro Pastoral Cadastrado'
+  const statusLine = m.pastoral ? 'Cadastro pastoral ativo'
     : m.status === 'integracao' ? 'Em processo de integração'
       : m.status === 'inativo' ? 'Cadastro inativo / afastado'
-        : `Membro ${m.gender === 'f' ? 'Ativa' : 'Ativo'} Cadastrado`;
+        : 'Cadastro ativo';
   const statusColor = st.cls === 'pill-green' ? 'var(--success)'
     : st.cls === 'pill-orange' ? 'var(--warning)'
       : st.cls === 'pill-red' ? 'var(--danger)' : 'var(--primary)';
@@ -1047,6 +2542,19 @@ function renderMemberProfile() {
       <div class="tl-sub">${t.sub}</div>
       <div class="tl-meta ${t.metaCls}">${t.meta}</div>
     </div>`).join('');
+  const hasPhone = m.phone && m.phone !== '—';
+  const hasEmail = m.email && m.email !== '—';
+  const contactBtns = [
+    hasPhone ? `<a class="pf-btn wa" href="https://wa.me/55${String(m.phone).replace(/\D/g, '')}" target="_blank" rel="noopener"><i data-lucide="message-circle"></i> WhatsApp Direto</a>` : '',
+    hasEmail ? `<a class="pf-btn" href="mailto:${m.email}"><i data-lucide="mail"></i> E-mail</a>` : '',
+  ].filter(Boolean).join('');
+  const accessAction = canManageAccess()
+    ? (m.webAccess
+      ? `<button class="pf-access-btn revoke" onclick="toggleMemberAccess('${m.id}', false)">Revogar acesso</button>`
+      : (hasEmail
+        ? `<button class="pf-access-btn grant" onclick="toggleMemberAccess('${m.id}', true)">Liberar acesso</button>`
+        : `<span class="pf-info-label">Cadastre um e-mail para liberar</span>`))
+    : '';
 
   box.innerHTML = `
     <div class="pf-top">
@@ -1062,41 +2570,47 @@ function renderMemberProfile() {
       <div class="pf-id">
         <span class="pf-av">${initials(m.name)}</span>
         <div class="pf-name">${m.name}${m.lider ? ' <span class="lider-tag">Líder</span>' : ''}</div>
-        <div class="pf-role">${m.role} · ${m.sector}</div>
+        <div class="pf-role">${m.role} · ${m.sector || 'Membro comum'}</div>
       </div>
-      <div class="pf-btns">
-        <a class="pf-btn wa" href="https://wa.me/55${String(m.phone).replace(/\D/g, '')}" target="_blank" rel="noopener"><i data-lucide="message-circle"></i> WhatsApp Direto</a>
-        <a class="pf-btn" href="mailto:${m.email}"><i data-lucide="mail"></i> E-mail</a>
-      </div>
+      ${contactBtns ? `<div class="pf-btns">${contactBtns}</div>` : ''}
       <div class="pf-info">
         <div>
           <div class="pf-info-label">Batismo</div>
           <div class="pf-info-val">${m.baptism || '—'}</div>
         </div>
         <div>
-          <div class="pf-info-label">Tempo de Igreja</div>
-          <div class="pf-info-val">${m.churchTime || '—'}</div>
+          <div class="pf-info-label">Membro desde</div>
+          <div class="pf-info-val">${m.joined ? formatDate(m.joined) : '—'}</div>
         </div>
         <div>
-          <div class="pf-info-label">Célula</div>
-          <div class="pf-info-val">${(m.cell && m.cell.name) || 'Sem célula'}</div>
+          <div class="pf-info-label">Ministério / Cargo</div>
+          <div class="pf-info-val">${m.sector || 'Membro comum'}${m.position ? ' · ' + m.position : ''}</div>
         </div>
         <div>
-          <div class="pf-info-label">Assiduidade</div>
-          <div class="pf-info-val att ${attCls}" style="display:flex;gap:6px;align-items:center"><i data-lucide="trending-up"></i>${att}% (Ata)</div>
+          <div class="pf-info-label">Telefone</div>
+          <div class="pf-info-val">${m.phone || '—'}</div>
         </div>
       </div>
-      <div class="pf-section-title">Linha do Tempo Pastoral <span>Últimos 30 dias</span></div>
+      <div class="pf-access">
+        <div>
+          <div class="pf-info-label">Acesso ao sistema web</div>
+          <div class="pf-info-val">${m.webAccess ? 'Liberado' : 'Não liberado'}</div>
+          <small>${m.webAccess ? 'Pode entrar com o e-mail cadastrado.' : 'Somente líderes ou pessoas autorizadas pelo pastor.'}</small>
+        </div>
+        ${accessAction}
+      </div>
+      <div class="pf-section-title">Linha do Tempo do Cadastro <span>Dados reais</span></div>
       <div class="tl">${tl}</div>
       <div class="pf-note">
         <div class="pf-note-head">
           <span class="pf-note-title">Notas Pastorais Confidenciais</span>
           <span class="pf-note-badge">Reservado à Liderança</span>
         </div>
-        <p>"${m.note || 'Sem anotações pastoral registradas para este membro.'}"</p>
-        <div class="pf-note-foot"><span>Anotado por Pr. Thiago</span><span>Atualizado em 01/10/2026</span></div>
+        <p>"${m.note || 'Sem anotações pastorais registradas para este membro.'}"</p>
+        <div class="pf-note-foot"><span>Registro interno da igreja</span><span>Atualizado no cadastro</span></div>
       </div>
       <button class="btn-primary pf-edit" onclick="editMember('${m.id}')"><i data-lucide="pencil"></i> Editar Ficha Cadastral</button>
+      <button class="btn-secondary pf-edit" onclick="openBaptismFormForMember('${m.id}')"><i data-lucide="droplets"></i> Ficha de Batismo</button>
       <button class="pf-remove" onclick="deleteMember('${m.id}')">Remover cadastro?</button>
     </div>`;
 }
@@ -1110,10 +2624,10 @@ function shareProfile(id) {
 
 function exportPeopleCSV() {
   const list = filterPeople();
-  const lines = ['Nome,Email,Telefone,Setor,Cargo,Status,Assiduidade,Celula'];
+  const lines = ['Nome,Email,Telefone,Ministerio,Cargo,Status,Acesso,Membro desde'];
   list.forEach(m => {
     const st = memberStatusInfo(m);
-    lines.push([m.name, m.email, m.phone, m.sector, m.role, st.label, (m.attendance || 0) + '%', (m.cell && m.cell.name) || '']
+    lines.push([m.name, m.email, m.phone, m.sector, m.position || '', st.label, m.webAccess ? 'Liberado' : 'Sem acesso', m.joined || '']
       .map(v => `"${String(v).replace(/"/g, '""')}"`).join(','));
   });
   const blob = new Blob(['\uFEFF' + lines.join('\n')], { type: 'text/csv;charset=utf-8' });
@@ -1158,35 +2672,41 @@ function deptToneClass(tone) {
 }
 
 function renderSetorKpis() {
-  const total = mockDepartments.length;
-  const active = mockDepartments.filter(d => d.readiness >= 40).length;
-  const vol = mockDepartments.reduce((s, d) => s + d.volunteers, 0);
-  const capacity = mockDepartments.reduce((s, d) => s + d.capacity, 0);
-  const cobertura = Math.round((vol / capacity) * 100);
-  const lider = mockDepartments.length * 2 + 4;
+  const list = mockDepartments;
+  const total = list.length;
+  const members = list.reduce((s, d) => s + (d.volunteers || 0), 0);
+  const withLeader = list.filter(d => !!d.leaderUserId).length;
+  const cargos = list.reduce((s, d) => s + ((d.cargos || []).length), 0);
+  const pctLeader = total ? Math.round((withLeader / total) * 100) : 0;
 
   setText('sKpiTotal', total);
-  setText('sKpiTotalPct', '100% ativos');
-  document.getElementById('sKpiTotalBar').style.width = '100%';
-  setText('sKpiAtivos', `${active} em operação`);
+  setText('sKpiTotalPct', total ? 'todos ativos' : '—');
+  const totalBar = document.getElementById('sKpiTotalBar');
+  if (totalBar) totalBar.style.width = total ? '100%' : '0%';
+  setText('sKpiAtivos', `${withLeader} com líder`);
 
-  setText('sKpiVol', vol);
-  setText('sKpiVolPct', `${Math.round((vol / 1260) * 100)}% do corpo`);
-  setText('sKpiVolNovos', '+18 este mês');
+  setText('sKpiVol', members);
+  setText('sKpiVolPct', total ? `~${Math.round(members / total)} por ministério` : '—');
+  setText('sKpiVolNovos', `${total} ministérios`);
 
-  setText('sKpiCobertura', cobertura + '%');
-  setText('sKpiCoberturaDelta', '+4% no trimestre');
-  document.getElementById('sKpiCoberturaBar').style.width = cobertura + '%';
-  setText('sKpiCoberturaMeta', `${vol}/${capacity} vagas`);
+  setText('sKpiCobertura', pctLeader + '%');
+  setText('sKpiCoberturaDelta', `${withLeader}/${total}`);
+  const cobBar = document.getElementById('sKpiCoberturaBar');
+  if (cobBar) cobBar.style.width = pctLeader + '%';
+  setText('sKpiCoberturaMeta', `${total - withLeader} sem líder`);
 
-  setText('sKpiLider', lider);
-  setText('sKpiLiderPct', '100% com tutoria ativa');
-  setText('sKpiLiderMeta', 'Líderes formados');
+  setText('sKpiLider', cargos);
+  setText('sKpiLiderPct', cargos ? 'funções ativas' : '—');
+  setText('sKpiLiderMeta', `${total} ministérios`);
+  setText('deptBadge', `${total} Ministérios`);
 }
 
 function renderDeptTabs() {
   const tabs = document.getElementById('deptTabs');
-  if (!tabs) return;
+  if (!tabs) {
+    setText('deptTabTodos', mockDepartments.length);
+    return;
+  }
   tabs.querySelectorAll('.dept-tab').forEach(b => {
     b.classList.toggle('active', b.dataset.tab === deptTab);
   });
@@ -1202,151 +2722,1200 @@ function setDeptTab(tab) {
 function renderDeptGrid() {
   const grid = document.getElementById('deptGrid');
   if (!grid) return;
-  const list = deptTab === 'todos' ? mockDepartments : mockDepartments.filter(d => d.group === deptTab);
-  grid.innerHTML = list.map(d => `
+  const list = mockDepartments;
+  if (!list.length) {
+    grid.innerHTML = '<div class="empty-state"><i data-lucide="network"></i><p>Nenhum ministério cadastrado. Crie o primeiro em "Novo Ministério".</p></div>';
+    if (window.lucide) lucide.createIcons();
+    return;
+  }
+  grid.innerHTML = list.map(d => {
+    const cargos = d.cargos || [];
+    const color = d.color || '#103B5F';
+    const cargoChips = cargos.slice(0, 3).map(c => `<span class="mtag">${c}</span>`).join('') +
+      (cargos.length > 3 ? `<span class="mtag mtag-2">+${cargos.length - 3}</span>` : '');
+    return `
     <div class="dept-card">
       <div class="dept-card-head">
-        <span class="dept-ico" style="background:var(--primary-light);color:var(--primary)"><i data-lucide="${d.icon}"></i></span>
+        <span class="dept-ico" style="background:${color}18;color:${color}"><i data-lucide="${d.icon || 'users'}"></i></span>
         <div class="dept-card-title">
           <strong>${d.name}</strong>
-          ${d.live ? '<span class="dept-live">LIVE</span>' : ''}
-          <small>${d.sub}</small>
+          <small>${d.sub || 'Sem descrição cadastrada'}</small>
         </div>
-        <button class="icon-box dept-more" onclick="manageDept('${d.id}')" title="Gerenciar"><i data-lucide="more-horizontal"></i></button>
+        <div class="dept-menu dropdown-anchor">
+          <button class="icon-box dept-more" onclick="toggleDeptMenu(event,'${d.id}')" title="Ações rápidas"><i data-lucide="more-horizontal"></i></button>
+        </div>
       </div>
-      <div class="dept-leader"><i data-lucide="crown"></i> ${d.leader}</div>
+      <div class="dept-leader"><i data-lucide="crown"></i> ${d.leader && d.leader !== '—' ? d.leader : 'Sem líder definido'}</div>
       <div class="dept-meta">
-        <span><i data-lucide="users"></i> ${d.volunteers}/${d.capacity} voluntários</span>
-        <span><i data-lucide="clock"></i> ${d.schedule}</span>
+        <span><i data-lucide="users"></i> ${d.volunteers || 0} membros</span>
+        <span><i data-lucide="tags"></i> ${cargos.length} cargos</span>
       </div>
-      <div class="dept-highlight">${d.highlight}</div>
-      <div class="dept-ready-row">
-        <span class="dept-ready-label">Status de prontidão:</span>
-        <span class="pill ${deptToneClass(d.tone)}">${d.status}</span>
-      </div>
-      <div class="dept-bar"><span style="width:${d.readiness}%"></span></div>
-      <button class="dept-manage" onclick="manageDept('${d.id}')">Gerenciar Setor</button>
-    </div>
-  `).join('');
+      <div class="mtags min-dept-tags">${cargoChips || '<span class="min-muted">Nenhum cargo cadastrado</span>'}</div>
+      <button class="dept-manage" onclick="openMinistryPage('${d.id}')">Gerenciar Ministério</button>
+    </div>`;
+  }).join('');
   if (window.lucide) lucide.createIcons();
 }
 
 function renderSaudeMinisterial() {
-  const list = document.getElementById('saudeList');
-  if (!list) {
-    // painel pode não existir em telas antigas
+  const list = mockDepartments;
+  const noLeader = list.filter(d => !d.leaderUserId);
+  const noMembers = list.filter(d => (d.volunteers || 0) === 0);
+
+  const saude = document.getElementById('saudeList');
+  if (saude) {
+    saude.innerHTML = noLeader.length
+      ? noLeader.map(d => `
+        <div class="sob-row">
+          <div class="sob-info">
+            <strong>${d.name}</strong>
+            <small>${d.sub || 'Sem descrição cadastrada'}</small>
+          </div>
+          <button class="btn-ghost btn-sm" onclick="openMinistryPage('${d.id}')">Definir líder</button>
+        </div>`).join('')
+      : '<div class="min-empty-inline"><i data-lucide="check-circle-2"></i> Todos os ministérios têm líder definido.</div>';
   }
-  const top5 = [...mockDepartments].sort((a, b) => (b.volunteers / b.capacity) - (a.volunteers / a.capacity)).slice(0, 5);
-  const rows = top5.map(d => {
-    const pct = Math.round((d.volunteers / d.capacity) * 100);
-    const barClass = pct >= 90 ? 'saude-bar-green' : 'saude-bar-gray';
-    return `
-      <div class="saude-row">
-        <div class="saude-row-top">
-          <span class="saude-name">${d.name}</span>
-          <span class="saude-pct">${d.volunteers}/${d.capacity} · ${pct}%</span>
-        </div>
-        <div class="saude-bar ${barClass}"><span style="width:${pct}%"></span></div>
-      </div>
-    `;
-  }).join('');
-  const el = document.getElementById('saudeList');
-  if (el) el.innerHTML = rows + '<div class="saude-meta">Meta: 80% – 95%</div>';
+  setText('semLiderCount', String(noLeader.length));
 
   const sob = document.getElementById('sobrecargaList');
   if (sob) {
-    sob.innerHTML = mockSobrecarga.map(s => `
-      <div class="sob-row">
-        <div class="sob-info">
-          <strong>${s.name}</strong>
-          <small>${s.role}</small>
-        </div>
-        <span class="sob-count">${s.shifts} escalas / ${s.limit} máx</span>
-        <span class="pill ${deptToneClass(s.tone)}">${s.shifts > s.limit ? 'Sobrecarga' : 'Atenção'}</span>
-      </div>
-    `).join('');
+    sob.innerHTML = noMembers.length
+      ? noMembers.map(d => `
+        <div class="sob-row">
+          <div class="sob-info">
+            <strong>${d.name}</strong>
+            <small>${(d.cargos || []).length} cargos cadastrados</small>
+          </div>
+          <button class="btn-ghost btn-sm" onclick="openMinistryPage('${d.id}')">Adicionar membros</button>
+        </div>`).join('')
+      : '<div class="min-empty-inline"><i data-lucide="check-circle-2"></i> Todos os ministérios têm membros vinculados.</div>';
   }
-  setText('alertaCount', `${mockSobrecarga.length} voluntários em risco de sobrecarga`);
+  setText('alertaCount', `${noMembers.length} ministério${noMembers.length === 1 ? '' : 's'}`);
 }
 
-function manageDept(id) {
-  const d = id ? mockDepartments.find(x => x.id === id) : null;
-  document.getElementById('modalTitle').textContent = d ? 'Gerenciar Setor' : 'Novo Setor ou Ministério';
-  document.getElementById('modalBody').innerHTML = `
-    <div class="form-group"><label>Nome</label><input type="text" id="deptName" value="${d ? d.name : ''}" placeholder="Ex: Ministério de Jovens"></div>
-    <div class="form-row">
-      <div class="form-group"><label>Líder Responsável</label><input type="text" id="deptLeader" value="${d ? d.leader : ''}" placeholder="Nome do líder"></div>
-      <div class="form-group"><label>Capacidade</label><input type="number" id="deptCapacity" value="${d ? d.capacity : ''}" placeholder="0"></div>
-    </div>
-    <div class="form-row">
-      <div class="form-group"><label>Horário Padrão</label><input type="text" id="deptSchedule" value="${d ? d.schedule : ''}" placeholder="Ex: Dom 18h"></div>
-      <div class="form-group"><label>Prontidão (%)</label><input type="number" id="deptReadiness" min="0" max="100" value="${d ? d.readiness : 100}"></div>
-    </div>
-    <div class="form-group"><label>Observação</label><input type="text" id="deptHighlight" value="${d ? d.highlight : ''}" placeholder="Destaque do setor"></div>
-    <div class="form-group"><label>Categoria</label>
-      <select class="filter-select" id="deptGroup" style="width:100%">
-        <option value="cultos" ${d && d.group === 'cultos' ? 'selected' : ''}>Cultos & Liturgia</option>
-        <option value="pastoral" ${d && d.group === 'pastoral' ? 'selected' : ''}>Pastoral & Cuidado</option>
-        <option value="operacoes" ${d && d.group === 'operacoes' ? 'selected' : ''}>Operações</option>
-      </select>
-    </div>
-    <div class="modal-footer" style="padding:16px 0 0;border-top:1px solid #F3F4F6;margin-top:8px">
-      ${d ? `<button class="btn-danger" onclick="deleteDept('${d.id}')"><i data-lucide="trash-2"></i> Desativar</button>` : ''}
-      <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
-      <button class="btn-primary" onclick="saveDept(${d ? `'${d.id}'` : 'null'})">
-        <span class="material-symbols-outlined" style="font-size:18px">save</span> ${d ? 'Salvar' : 'Criar Setor'}
-      </button>
-    </div>
+// ===== GERENCIAR MINISTÉRIO (página inteira) =====
+let ministryPageId = null;       // id do setor aberto (null = novo)
+let ministryTargetSection = null; // rolagem/foco ao abrir via ação rápida
+let ministryUsers = [];          // usuários disponíveis para liderança
+let ministrySchedules = [];      // próximas escalas do ministério
+let ministryCargosDraft = [];    // cargos em edição
+let ministryPeopleOptions = [];  // pessoas que ainda podem ser vinculadas
+let ministryLeaderIds = [];      // líderes selecionados
+let ministrySelectedPersonId = null;
+let ministryLeaderHideTimer = null;
+let ministryPeopleHideTimer = null;
+let ministryAuditLogs = [];
+
+function escHtml(value) {
+  return String(value == null ? '' : value).replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[c]));
+}
+
+function slugifyMinistry(value) {
+  return String(value || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 60);
+}
+
+function currentMinistrySector() {
+  return (window.apiSectors || []).find(s => s.id === ministryPageId) || null;
+}
+
+function canManageMinistryLeadership() {
+  return isFullAccess();
+}
+
+function openMinistryPage(id) {
+  ministryPageId = id || null;
+  const navEl = document.querySelector('.nav-item[data-section="setores"]');
+  navigateTo('ministerio', navEl);
+}
+
+function manageDept(id) { openMinistryPage(id); }
+
+function minGuideGo(id, btn) {
+  document.querySelectorAll('.min-guide-item').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  const el = document.getElementById(id);
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function closeDeptMenu() {
+  const menu = document.getElementById('deptActionMenu');
+  if (menu) menu.remove();
+}
+
+function toggleDeptMenu(event, id) {
+  if (event) event.stopPropagation();
+  const sector = (window.apiSectors || []).find(s => s.id === id);
+  if (!sector) return;
+  const trigger = event.currentTarget;
+  const alreadyOpen = document.getElementById('deptActionMenu');
+  const sameSector = alreadyOpen && alreadyOpen.dataset.sector === id;
+  closeDropdowns();
+  closeDeptMenu();
+  if (sameSector) return;
+
+  const fullAccess = canManageMinistryLeadership();
+  const menu = document.createElement('div');
+  menu.id = 'deptActionMenu';
+  menu.className = 'dropdown dept-actions open';
+  menu.dataset.sector = id;
+  menu.style.position = 'fixed';
+  menu.style.right = 'auto';
+  menu.style.zIndex = '9999';
+  menu.innerHTML = `
+    <div class="dropdown-label">Ações rápidas</div>
+    <div class="dropdown-item" data-action="manage"><i data-lucide="settings"></i> Gerenciar ministério</div>
+    <div class="dropdown-item" data-action="members"><i data-lucide="users"></i> Membros e cargos</div>
+    <div class="dropdown-item" data-action="schedules"><i data-lucide="calendar-days"></i> Abrir escalas</div>
+    ${fullAccess ? '<div class="dropdown-item" data-action="leader"><i data-lucide="crown"></i> Definir líder</div>' : ''}
+    ${fullAccess ? '<div class="dropdown-item" data-action="cargos"><i data-lucide="tags"></i> Editar cargos</div>' : ''}
+    ${fullAccess ? '<div class="dropdown-item item-danger" data-action="delete"><i data-lucide="trash-2"></i> Excluir ministério</div>' : ''}
   `;
+  menu.style.visibility = 'hidden';
+  document.body.appendChild(menu);
+  const rect = trigger.getBoundingClientRect();
+  const w = menu.offsetWidth || 220;
+  const h = menu.offsetHeight || 0;
+  menu.style.left = Math.max(8, Math.min(rect.right - w, window.innerWidth - w - 8)) + 'px';
+  menu.style.top = Math.max(8, Math.min(rect.bottom + 8, window.innerHeight - h - 12)) + 'px';
+  menu.style.visibility = '';
+  menu.addEventListener('click', (ev) => {
+    const item = ev.target.closest('.dropdown-item');
+    if (!item) return;
+    const action = item.dataset.action;
+    closeDeptMenu();
+    if (action === 'manage') openMinistryPage(id);
+    else if (action === 'members') openMinistryPageSection(id, 'members');
+    else if (action === 'schedules') openMinistrySchedulesById(id);
+    else if (action === 'leader') openMinistryPageSection(id, 'leader');
+    else if (action === 'cargos') openMinistryPageSection(id, 'cargos');
+    else if (action === 'delete') quickDeleteMinistry(id);
+  });
   if (window.lucide) lucide.createIcons();
+}
+
+function openMinistryPageSection(id, section) {
+  closeDropdowns();
+  ministryTargetSection = section || null;
+  openMinistryPage(id);
+}
+
+function openMinistrySchedulesById(id) {
+  closeDropdowns();
+  const sector = (window.apiSectors || []).find(s => s.id === id);
+  if (!sector) { showToast('Ministério não encontrado', 'error'); return; }
+  escMinistryName = sector.name;
+  escActiveId = null;
+  navigateTo('escalas');
+}
+
+async function quickDeleteMinistry(id) {
+  closeDropdowns();
+  if (!canManageMinistryLeadership()) {
+    showToast('Apenas pastor ou admin master pode excluir ministérios', 'error');
+    return;
+  }
+  const sector = (window.apiSectors || []).find(s => s.id === id);
+  if (!sector) return;
+  if (!(await appConfirm(`Excluir o ministério "${sector.label}"? Escalas e vínculos deste ministério também serão removidos. Esta ação não pode ser desfeita.`, { title: 'Excluir ministério', confirmLabel: 'Excluir', icon: 'delete', tone: 'danger' }))) return;
+  try {
+    await apiPost(`/sectors/${id}/delete`, { actorId: currentUser ? currentUser.id : undefined });
+    await hydrateFromApi();
+    ministryPageId = null;
+    renderSetores();
+    showToast('Ministério excluído', 'success');
+  } catch (e) {
+    showToast((e && e.message) || 'Não foi possível excluir o ministério', 'error');
+  }
+}
+
+function renderMinistryCargos() {
+  const chips = document.getElementById('minCargosChips');
+  if (chips) {
+    chips.innerHTML = ministryCargosDraft.length
+      ? ministryCargosDraft.map((c, i) => `
+        <span class="min-chip">${escHtml(c)}
+          <button type="button" onclick="removeMinistryCargo(${i})" title="Remover cargo"><i data-lucide="x"></i></button>
+        </span>`).join('')
+      : '<span class="min-muted">Nenhum cargo cadastrado ainda.</span>';
+  }
+  setText('minCargosCount', `${ministryCargosDraft.length} cargo${ministryCargosDraft.length === 1 ? '' : 's'}`);
+
+  const datalist = document.getElementById('minCargosList');
+  if (datalist) datalist.innerHTML = ministryCargosDraft.map(c => `<option value="${escHtml(c)}"></option>`).join('');
+
+  const addMenu = document.getElementById('minAddCargosMenu');
+  if (addMenu) {
+    addMenu.innerHTML = ministryCargosDraft.length
+      ? ministryCargosDraft.map(c => `<label><input type="checkbox" value="${escHtml(c)}" onchange="updateMinistryAddCargoLabel()"> ${escHtml(c)}</label>`).join('')
+      : '<span class="min-muted">Cadastre cargos primeiro.</span>';
+  }
+  updateMinistryAddCargoLabel();
+  renderMinistryMembers();
+  if (window.lucide) lucide.createIcons();
+}
+
+function updateMinistryAddCargoLabel() {
+  const menu = document.getElementById('minAddCargosMenu');
+  const label = document.getElementById('minAddCargosLabel');
+  if (!menu || !label) return;
+  const selected = [...menu.querySelectorAll('input:checked')].map(i => i.value);
+  label.textContent = selected.length ? selected.join(', ') : 'Selecionar cargos';
+}
+
+async function persistMinistryCargos() {
+  if (!ministryPageId) return;
+  const sector = currentMinistrySector();
+  if (!sector) return;
+  const current = JSON.stringify(sector.cargosList || []);
+  if (JSON.stringify(ministryCargosDraft) === current) return;
+  await apiPost(`/sectors/${ministryPageId}/update`, {
+    cargos: ministryCargosDraft,
+    actorId: currentUser ? currentUser.id : undefined,
+  });
+  await hydrateFromApi();
+}
+
+async function addMinistryCargo() {
+  const input = document.getElementById('minCargoInput');
+  if (!input) return;
+  const value = input.value.trim();
+  if (!value) { input.focus(); return; }
+  if (ministryCargosDraft.some(c => c.toLowerCase() === value.toLowerCase())) {
+    showToast('Este cargo já está cadastrado', 'warning');
+    return;
+  }
+  ministryCargosDraft.push(value);
+  input.value = '';
+  renderMinistryCargos();
+  if (ministryPageId) {
+    try {
+      await persistMinistryCargos();
+      refreshMinistryMemberArea();
+      showToast('Cargo adicionado', 'success');
+    } catch (e) {
+      showToast((e && e.message) || 'Não foi possível salvar o cargo', 'error');
+    }
+  }
+}
+
+async function removeMinistryCargo(index) {
+  const cargo = ministryCargosDraft[index];
+  if (!cargo) return;
+  if (!(await appConfirm(`Remover o cargo "${cargo}"?`, { title: 'Remover cargo', confirmLabel: 'Remover', icon: 'label_off', tone: 'danger' }))) return;
+  ministryCargosDraft.splice(index, 1);
+  renderMinistryCargos();
+  if (ministryPageId) {
+    try {
+      await persistMinistryCargos();
+      refreshMinistryMemberArea();
+      showToast('Cargo removido', 'success');
+    } catch (e) {
+      showToast((e && e.message) || 'Não foi possível salvar o cargo', 'error');
+    }
+  }
+}
+
+function ministryUserName(user) {
+  if (!user) return 'Usuário';
+  return (user.person && user.person.name) || user.email || 'Usuário';
+}
+
+function renderMinistryLeaderChips() {
+  const box = document.getElementById('minLeaderChips');
+  if (!box) return;
+  if (!ministryLeaderIds.length) {
+    box.innerHTML = '<span class="min-muted">Nenhum líder definido</span>';
+  } else {
+    const canEdit = canManageMinistryLeadership();
+    box.innerHTML = ministryLeaderIds.map(id => {
+      const user = ministryUsers.find(u => u.id === id);
+      const name = ministryUserName(user);
+      return `<span class="min-chip min-leader-chip">${escHtml(name)}
+        ${canEdit ? `<button type="button" onclick="removeMinistryLeader('${id}')" title="Remover líder"><i data-lucide="x"></i></button>` : ''}
+      </span>`;
+    }).join('');
+  }
+  if (window.lucide) lucide.createIcons();
+}
+
+function filterMinistryLeaderSuggestions() {
+  clearTimeout(ministryLeaderHideTimer);
+  const input = document.getElementById('minLeaderSearch');
+  const box = document.getElementById('minLeaderSuggestions');
+  if (!input || !box) return;
+  if (input.disabled) { box.classList.remove('open'); return; }
+  const term = (input.value || '').trim().toLowerCase();
+  const list = ministryUsers
+    .filter(u => !ministryLeaderIds.includes(u.id))
+    .filter(u => {
+      if (!term) return true;
+      const name = ministryUserName(u).toLowerCase();
+      const email = String(u.email || '').toLowerCase();
+      return name.includes(term) || email.includes(term);
+    })
+    .slice(0, 8);
+  if (!list.length) {
+    box.innerHTML = '<div class="min-suggestion-empty">Nenhum usuário encontrado</div>';
+  } else {
+    box.innerHTML = list.map(u => {
+      const name = ministryUserName(u);
+      const roles = (u.roles || []).map(r => r.role && r.role.name).filter(Boolean)
+        .map(n => n === 'SUPER_ADMIN' ? 'Admin Master' : n === 'PASTOR' ? 'Pastor' : 'Membro');
+      return `<button type="button" class="min-suggestion-item" onmousedown="event.preventDefault()" onclick="addMinistryLeader('${u.id}')">
+        <span class="min-suggestion-avatar">${escHtml(initials(name))}</span>
+        <span class="min-suggestion-text">
+          <strong>${escHtml(name)}</strong>
+          <small>${escHtml(u.email || '')}${roles.length ? ' · ' + escHtml([...new Set(roles)].join(', ')) : ''}</small>
+        </span>
+      </button>`;
+    }).join('');
+  }
+  box.classList.add('open');
+}
+
+function showMinistryLeaderSuggestions() {
+  filterMinistryLeaderSuggestions();
+}
+
+function hideMinistryLeaderSuggestions(force) {
+  clearTimeout(ministryLeaderHideTimer);
+  ministryLeaderHideTimer = setTimeout(() => {
+    const input = document.getElementById('minLeaderSearch');
+    if (!force && input && document.activeElement === input) return;
+    const box = document.getElementById('minLeaderSuggestions');
+    if (box) box.classList.remove('open');
+  }, 160);
+}
+
+async function addMinistryLeader(id) {
+  if (!canManageMinistryLeadership()) {
+    showToast('Apenas pastor ou admin master pode alterar líderes', 'error');
+    return;
+  }
+  if (!id || ministryLeaderIds.includes(id)) return;
+  ministryLeaderIds.push(id);
+  const input = document.getElementById('minLeaderSearch');
+  if (input) input.value = '';
+  hideMinistryLeaderSuggestions(true);
+  renderMinistryLeaderChips();
+  if (ministryPageId) {
+    try {
+      await persistMinistryLeaders();
+      showToast('Líder adicionado', 'success');
+    } catch (e) {
+      showToast((e && e.message) || 'Não foi possível adicionar o líder', 'error');
+      await renderMinistryPage();
+    }
+  }
+}
+
+async function removeMinistryLeader(id) {
+  if (!canManageMinistryLeadership()) {
+    showToast('Apenas pastor ou admin master pode alterar líderes', 'error');
+    return;
+  }
+  ministryLeaderIds = ministryLeaderIds.filter(x => x !== id);
+  renderMinistryLeaderChips();
+  if (ministryPageId) {
+    try {
+      await persistMinistryLeaders();
+      showToast('Líder removido', 'success');
+    } catch (e) {
+      showToast((e && e.message) || 'Não foi possível remover o líder', 'error');
+      await renderMinistryPage();
+    }
+  }
+}
+
+async function persistMinistryLeaders() {
+  if (!ministryPageId) return;
+  await apiPost(`/sectors/${ministryPageId}/update`, {
+    leaderUserIds: ministryLeaderIds.slice(),
+    actorId: currentUser ? currentUser.id : undefined,
+  });
+  await hydrateFromApi();
+  const sector = currentMinistrySector();
+  if (sector) ministryLeaderIds = (sector.leaderUserIds || []).slice();
+  renderMinistryLeaderChips();
+  renderMinistryStats(sector);
+  renderMinistryInfo(sector);
+  loadMinistryAudit();
+}
+
+function renderMinistryStats(sector) {
+  const box = document.getElementById('minStats');
+  if (!box) return;
+  const members = ((sector && sector.members) || []).filter(m => m.person || m.user || m.personId || m.userId);
+  const withLogin = members.filter(m => m.user).length;
+  const stats = [
+    { label: 'Membros ativos', value: members.length },
+    { label: 'Com acesso ao sistema', value: withLogin },
+    { label: 'Cargos', value: ministryCargosDraft.length },
+    { label: 'Escalas futuras', value: ministrySchedules.length },
+  ];
+  box.innerHTML = stats.map(s => `
+    <div class="min-stat">
+      <b>${s.value}</b>
+      <span>${s.label}</span>
+    </div>`).join('');
+}
+
+function renderMinistryInfo(sector) {
+  const box = document.getElementById('minInfoList');
+  if (!box) return;
+  if (!sector) {
+    box.innerHTML = '<div class="min-muted">As informações aparecem depois que o ministério for criado.</div>';
+    return;
+  }
+  const rows = [
+    ['Status', sector.isActive === false ? 'Inativo' : 'Ativo'],
+    ['Líderes', sector.leaderDisplay || sector.leaderName || 'Sem líder'],
+    ['Membros ativos', String((sector.members || []).length)],
+    ['Cargos', String(ministryCargosDraft.length)],
+    ['Escalas futuras', String(ministrySchedules.length)],
+    ['E-mail de contato', sector.contactEmail || '—'],
+    ['WhatsApp', sector.whatsappLink || '—'],
+  ];
+  box.innerHTML = rows.map(([label, value]) => `
+    <div class="min-info-row">
+      <span>${escHtml(label)}</span>
+      <strong>${escHtml(value)}</strong>
+    </div>`).join('');
+}
+
+async function loadMinistryAudit() {  const sector = currentMinistrySector();
+  if (!sector) { ministryAuditLogs = []; renderMinistryAudit(); return; }
+  try {
+    const logs = await apiGet(`/sectors/${sector.id}/audit`);
+    ministryAuditLogs = Array.isArray(logs) ? logs : [];
+  } catch (e) { ministryAuditLogs = []; }
+  renderMinistryAudit();
+}
+
+// Atualiza apenas as áreas de membros/estatísticas/auditoria,
+// preservando o que o usuário digitou nos campos do ministério.
+function renderMinistryIndications() {
+  const box = document.getElementById('minIndicationsList');
+  if (!box) return;
+  const sector = currentMinistrySector();
+  const list = (sector && sector.indications) || [];
+  setText('minIndicationsCount', `${list.length} indica${list.length === 1 ? 'ção' : 'ões'}`);
+  if (!list.length) {
+    box.innerHTML = '<div class="min-muted" style="padding:8px 0">Nenhuma indicação registrada.</div>';
+    return;
+  }
+  const statusMeta = {
+    ATIVO: { label: 'Ativo', cls: 'pill-green' },
+    APROVADO: { label: 'Aprovado', cls: 'pill-blue' },
+    INDICADO: { label: 'Indicado', cls: 'pill-orange' },
+    RECUSADO: { label: 'Recusado', cls: 'pill-red' },
+  };
+  box.innerHTML = list.map(ind => {
+    const st = statusMeta[String(ind.status || 'INDICADO').toUpperCase()] || statusMeta.INDICADO;
+    return `<div class="min-indication-row">
+      <span class="min-member-av">${escHtml(initials(ind.name))}</span>
+      <div class="min-indication-info">
+        <strong>${escHtml(ind.name)}${ind.person ? ' <i data-lucide="link" title="Vinculado a membro"></i>' : ''}</strong>
+        <small>${escHtml([ind.role, ind.year].filter(Boolean).join(' · ') || 'Sem função informada')}</small>
+      </div>
+      <span class="pill ${st.cls}">${st.label}</span>
+      <div class="min-indication-actions">
+        ${String(ind.status).toUpperCase() !== 'ATIVO' ? `<button class="btn-icon" onclick="updateMinistryIndicationStatus('${ind.id}','ATIVO')" title="Ativar indicação"><i data-lucide="check"></i></button>` : ''}
+        <button class="btn-icon danger" onclick="removeMinistryIndication('${ind.id}')" title="Remover indicação"><i data-lucide="trash-2"></i></button>
+      </div>
+    </div>`;
+  }).join('');
+  if (window.lucide) lucide.createIcons();
+}
+
+async function addMinistryIndication() {
+  const sector = currentMinistrySector();
+  if (!sector) { showToast('Salve o ministério primeiro', 'warning'); return; }
+  const name = ((document.getElementById('minIndicationName') || {}).value || '').trim();
+  const role = ((document.getElementById('minIndicationRole') || {}).value || '').trim();
+  const year = ((document.getElementById('minIndicationYear') || {}).value || '').trim();
+  if (!name) { showToast('Informe o nome indicado', 'error'); return; }
+  try {
+    await apiPost(`/sectors/${sector.id}/indications`, { name, role, year, status: 'INDICADO', actorId: currentUser ? currentUser.id : undefined });
+    await hydrateFromApi();
+    const nameEl = document.getElementById('minIndicationName');
+    const roleEl = document.getElementById('minIndicationRole');
+    if (nameEl) nameEl.value = '';
+    if (roleEl) roleEl.value = '';
+    renderMinistryIndications();
+    renderMinistryStats(currentMinistrySector());
+    loadMinistryAudit();
+    showToast('Indicação adicionada', 'success');
+  } catch (e) {
+    showToast((e && e.message) || 'Não foi possível adicionar a indicação', 'error');
+  }
+}
+
+async function updateMinistryIndicationStatus(indicationId, status) {
+  const sector = currentMinistrySector();
+  if (!sector) return;
+  try {
+    await apiPost(`/sectors/${sector.id}/indications/${indicationId}/update`, { status, actorId: currentUser ? currentUser.id : undefined });
+    await hydrateFromApi();
+    renderMinistryIndications();
+    loadMinistryAudit();
+    showToast('Indicação atualizada', 'success');
+  } catch (e) {
+    showToast((e && e.message) || 'Não foi possível atualizar a indicação', 'error');
+  }
+}
+
+async function removeMinistryIndication(indicationId) {
+  const sector = currentMinistrySector();
+  if (!sector) return;
+  const indication = (sector.indications || []).find(i => i.id === indicationId);
+  if (!indication) return;
+  if (!(await appConfirm(`Remover a indicação de "${indication.name}"?`, { title: 'Remover indicação', confirmLabel: 'Remover', icon: 'user-x', tone: 'danger' }))) return;
+  try {
+    await apiPost(`/sectors/${sector.id}/indications/${indicationId}/remove`, { actorId: currentUser ? currentUser.id : undefined });
+    await hydrateFromApi();
+    renderMinistryIndications();
+    renderMinistryStats(currentMinistrySector());
+    loadMinistryAudit();
+    showToast('Indicação removida', 'success');
+  } catch (e) {
+    showToast((e && e.message) || 'Não foi possível remover a indicação', 'error');
+  }
+}
+
+function refreshMinistryMemberArea() {
+  const sector = currentMinistrySector();
+  renderMinistryCargos();
+  renderMinistryIndications();
+  renderMinistryStats(sector);
+  renderMinistryInfo(sector);
+  loadMinistryAudit();
+  if (window.lucide) lucide.createIcons();
+}
+
+function renderMinistryMembers() {
+  const body = document.getElementById('minMembersBody');
+  if (!body) return;
+  const sector = currentMinistrySector();
+  if (!sector) {
+    body.innerHTML = '<tr><td colspan="5"><div class="min-muted" style="padding:18px">Salve o ministério para adicionar membros.</div></td></tr>';
+    ministryPeopleOptions = [];
+    return;
+  }
+  const members = (sector.members || []).filter(m => m.person || m.user || m.personId || m.userId);
+  setText('minMembersCount', `${members.length} membro${members.length === 1 ? '' : 's'}`);
+  setText('minMembersSub', `${members.length} pessoa${members.length === 1 ? '' : 's'} vinculada${members.length === 1 ? '' : 's'} a este ministério`);
+
+  const linkedIds = new Set();
+  members.forEach(m => {
+    if (m.personId) linkedIds.add(m.personId);
+    if (m.person && m.person.id) linkedIds.add(m.person.id);
+    if (m.user && m.user.person && m.user.person.id) linkedIds.add(m.user.person.id);
+  });
+  ministryPeopleOptions = (mockMembers || [])
+    .filter(p => p && p.id && !linkedIds.has(p.id))
+    .sort((a, b) => String(a.name).localeCompare(String(b.name), 'pt-BR'));
+  if (ministrySelectedPersonId && !ministryPeopleOptions.some(p => p.id === ministrySelectedPersonId)) {
+    ministrySelectedPersonId = null;
+    const input = document.getElementById('minAddPersonSearch');
+    if (input) input.value = '';
+  }
+
+  if (!members.length) {
+    body.innerHTML = '<tr><td colspan="5"><div class="min-muted" style="padding:18px">Nenhum membro vinculado ainda. Use o campo acima para adicionar.</div></td></tr>';
+    return;
+  }
+
+  body.innerHTML = members.map(m => {
+    const person = m.person || (m.user && m.user.person) || {};
+    const name = person.name || (m.user && m.user.email) || 'Membro';
+    const email = person.email || (m.user && m.user.email) || '—';
+    const phone = person.phone || '—';
+    const positions = parseCargos(m.positions || m.position);
+    const isLeader = !!(m.userId && ((sector.leaderUserIds || []).includes(m.userId) || sector.leaderUserId === m.userId));
+    const access = !!m.user;
+    const cargoMenu = ministryCargosDraft.length
+      ? ministryCargosDraft.map(c => `
+          <label><input type="checkbox" value="${escHtml(c)}" ${positions.includes(c) ? 'checked' : ''} onchange="saveMinistryMemberCargos('${m.id}')"> ${escHtml(c)}</label>`).join('')
+      : '<span class="min-muted">Cadastre cargos primeiro.</span>';
+    return `
+      <tr>
+        <td>
+          <div class="min-member">
+            <span class="min-member-av">${escHtml(initials(name))}</span>
+            <div>
+              <strong>${escHtml(name)}${isLeader ? ' <span class="lider-tag">Líder</span>' : ''}</strong>
+              <small>${escHtml(m.role && m.role.label ? m.role.label : 'Membro')}${positions.length ? ' · ' + positions.length + ' cargo' + (positions.length === 1 ? '' : 's') : ''}</small>
+            </div>
+          </div>
+        </td>
+        <td>
+          <div class="min-contact">${escHtml(email)}<br><small>${escHtml(phone)}</small></div>
+        </td>
+        <td>
+          <details class="min-cargo-picker" data-member="${m.id}">
+            <summary>
+              ${positions.length
+                ? positions.map(p => `<span class="min-chip-sm">${escHtml(p)}</span>`).join('')
+                : '<span class="min-muted">Sem cargo</span>'}
+            </summary>
+            <div class="min-cargo-menu">${cargoMenu}</div>
+          </details>
+        </td>
+        <td>${access
+          ? '<span class="pill pill-green">Com login</span>'
+          : '<span class="pill pill-gray">Sem login</span>'}</td>
+        <td class="pactions">
+          ${access && !isLeader && canManageMinistryLeadership()
+            ? `<button class="btn-icon" onclick="promoteMinistryMember('${m.id}')" title="Definir como líder"><i data-lucide="crown"></i></button>`
+            : ''}
+          <button class="btn-icon danger" onclick="removeMinistryMember('${m.id}')" title="Remover do ministério"><i data-lucide="user-minus"></i></button>
+        </td>
+      </tr>`;
+  }).join('');
+  if (window.lucide) lucide.createIcons();
+}
+
+function filterMinistryPeopleSuggestions() {
+  clearTimeout(ministryPeopleHideTimer);
+  const input = document.getElementById('minAddPersonSearch');
+  const box = document.getElementById('minPersonSuggestions');
+  if (!input || !box) return;
+  if (ministrySelectedPersonId) {
+    const selected = ministryPeopleOptions.find(p => p.id === ministrySelectedPersonId);
+    if (selected && input.value === selected.name) { box.classList.remove('open'); return; }
+    ministrySelectedPersonId = null;
+  }
+  const term = (input.value || '').trim().toLowerCase();
+  const list = ministryPeopleOptions.filter(p =>
+    !term ||
+    String(p.name || '').toLowerCase().includes(term) ||
+    String(p.email || '').toLowerCase().includes(term) ||
+    String(p.phone || '').toLowerCase().includes(term)
+  ).slice(0, 8);
+  if (!list.length) {
+    box.innerHTML = '<div class="min-suggestion-empty">Nenhuma pessoa encontrada</div>';
+  } else {
+    box.innerHTML = list.map(p => `
+      <button type="button" class="min-suggestion-item" onmousedown="event.preventDefault()" onclick="selectMinistryPerson('${p.id}')">
+        <span class="min-suggestion-avatar">${escHtml(initials(p.name))}</span>
+        <span class="min-suggestion-text"><strong>${escHtml(p.name)}</strong></span>
+      </button>`).join('');
+  }
+  box.classList.add('open');
+}
+
+function showMinistryPeopleSuggestions() {
+  filterMinistryPeopleSuggestions();
+}
+
+function hideMinistryPeopleSuggestions(force) {
+  clearTimeout(ministryPeopleHideTimer);
+  ministryPeopleHideTimer = setTimeout(() => {
+    const input = document.getElementById('minAddPersonSearch');
+    if (!force && input && document.activeElement === input) return;
+    const box = document.getElementById('minPersonSuggestions');
+    if (box) box.classList.remove('open');
+  }, 160);
+}
+
+function selectMinistryPerson(id) {
+  const person = ministryPeopleOptions.find(p => p.id === id);
+  if (!person) return;
+  ministrySelectedPersonId = id;
+  const input = document.getElementById('minAddPersonSearch');
+  if (input) input.value = person.name;
+  hideMinistryPeopleSuggestions(true);
+}
+
+function handleMinistryPersonFieldClick(event) {
+  if (event && (event.target.closest('input') || event.target.closest('button'))) return;
+  openMinistryPersonPicker();
+}
+
+function renderMinistryPersonPickerList(term) {
+  const listEl = document.getElementById('minPickerList');
+  if (!listEl) return;
+  const q = String(term || '').trim().toLowerCase();
+  const list = ministryPeopleOptions.filter(p =>
+    !q ||
+    String(p.name || '').toLowerCase().includes(q) ||
+    String(p.email || '').toLowerCase().includes(q) ||
+    String(p.phone || '').toLowerCase().includes(q)
+  );
+  if (!list.length) {
+    listEl.innerHTML = '<div class="min-picker-empty">Nenhuma pessoa disponível. Todas já estão no ministério ou não há pessoas cadastradas.</div>';
+    return;
+  }
+  listEl.innerHTML = list.map(p => `
+    <button type="button" class="min-picker-item" onclick="selectMinistryPersonFromPicker('${p.id}')">
+      <span class="min-picker-avatar">${escHtml(initials(p.name))}</span>
+      <span class="min-picker-info">
+        <strong>${escHtml(p.name)}</strong>
+        <small>${escHtml(p.email && p.email !== '—' ? p.email : 'Sem e-mail')}${p.phone && p.phone !== '—' ? ' · ' + escHtml(p.phone) : ''}</small>
+      </span>
+      ${p.webAccess ? '<span class="pill pill-green">Com acesso</span>' : '<span class="pill pill-gray">Sem acesso</span>'}
+    </button>`).join('');
+  if (window.lucide) lucide.createIcons();
+}
+
+function filterMinistryPersonPicker() {
+  const search = document.getElementById('minPickerSearch');
+  renderMinistryPersonPickerList(search ? search.value : '');
+}
+
+function openMinistryPersonPicker() {
+  const title = document.getElementById('modalTitle');
+  const body = document.getElementById('modalBody');
+  if (!title || !body) return;
+  title.textContent = 'Selecionar pessoa';
+  body.innerHTML = `
+    <div class="min-picker">
+      <div class="form-group" style="margin-bottom:12px">
+        <input type="text" id="minPickerSearch" placeholder="Buscar por nome, e-mail ou telefone..." autocomplete="off" oninput="filterMinistryPersonPicker()">
+      </div>
+      <div class="min-picker-list" id="minPickerList"></div>
+      <div class="min-picker-footer">
+        <button class="btn-secondary" onclick="closeModal()">Fechar</button>
+      </div>
+    </div>`;
+  renderMinistryPersonPickerList('');
   openModal();
+  setTimeout(() => {
+    const search = document.getElementById('minPickerSearch');
+    if (search) search.focus();
+  }, 80);
 }
 
-async function saveDept(id) {
-  const name = document.getElementById('deptName').value.trim();
-  const leader = document.getElementById('deptLeader').value.trim();
-  const capacity = parseInt(document.getElementById('deptCapacity').value) || 0;
-  const schedule = document.getElementById('deptSchedule').value.trim();
-  const readiness = parseInt(document.getElementById('deptReadiness').value) || 0;
-  const highlight = document.getElementById('deptHighlight').value.trim();
-  const group = document.getElementById('deptGroup').value;
-  if (!name) { showToast('Informe o nome do setor', 'error'); return; }
-  const slug = name.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
-  const payload = { name: slug, label: name, leaderName: leader, capacity, scheduleText: schedule, readiness, highlightText: highlight, groupTag: group, icon: 'building-2', color: '#103B5F' };
-  try {
-    if (typeof apiPost === 'function' && apiOnline()) {
-      if (id) await apiPost(`/sectors/${id}/update`, payload);
-      else await apiPost('/sectors', payload);
-      await hydrateFromApi();
-      showToast(id ? 'Setor atualizado no banco!' : 'Setor criado no banco!', 'success');
-    } else {
-      if (id) {
-        const d = mockDepartments.find(x => x.id === id);
-        Object.assign(d, { name, leader, capacity, schedule, readiness, highlight, group });
-        showToast('Setor atualizado!');
-      } else {
-        mockDepartments.push({ id: 'local-' + Date.now(), name, icon: 'building-2', group, sub: '', leader, volunteers: 0, capacity, schedule, highlight, readiness, status: readiness >= 90 ? 'Pronto' : readiness >= 70 ? 'Atenção' : 'Crítico', tone: readiness >= 90 ? 'green' : readiness >= 70 ? 'orange' : 'red', live: false });
-        showToast('Setor criado!');
-      }
-    }
-  } catch (e) { showToast('Erro: API indisponível', 'error'); return; }
+function selectMinistryPersonFromPicker(id) {
+  selectMinistryPerson(id);
   closeModal();
-  renderSetores();
 }
 
-async function deleteDept(id) {
-  try {
-    if (typeof apiPost === 'function' && apiOnline()) {
-      await apiPost(`/sectors/${id}/delete`, {});
-      await hydrateFromApi();
-    } else {
-      const idx = mockDepartments.findIndex(x => x.id === id);
-      if (idx > -1) mockDepartments.splice(idx, 1);
+async function saveMinistry() {
+  const labelEl = document.getElementById('minLabel');
+  const activeEl = document.getElementById('minActive');
+  if (!labelEl) return;
+  const label = labelEl.value.trim();
+  if (!label) {
+    showToast('Informe o nome do ministério', 'error');
+    labelEl.focus();
+    return;
+  }
+  const isNew = !ministryPageId;
+  const payload = {
+    label,
+    description: (document.getElementById('minDescription') || {}).value || '',
+    whatsappLink: (document.getElementById('minWhatsapp') || {}).value || '',
+    contactEmail: (document.getElementById('minContactEmail') || {}).value || '',
+    notes: (document.getElementById('minNotes') || {}).value || '',
+    cargos: ministryCargosDraft,
+    leaderUserIds: ministryLeaderIds,
+    isActive: activeEl ? !!activeEl.checked : true,
+    actorId: currentUser ? currentUser.id : undefined,
+  };
+  if (isNew) {
+    const name = slugifyMinistry(label);
+    if (!name) {
+      showToast('Informe um nome válido para o ministério', 'error');
+      return;
     }
-  } catch (e) { /* offline */ }
-  closeModal();
-  renderSetores();
-  showToast('Setor desativado');
+    payload.name = name;
+  }
+  try {
+    let saved;
+    if (isNew) {
+      saved = await apiPost('/sectors', payload);
+      ministryPageId = saved.id;
+      showToast('Ministério criado com sucesso!', 'success');
+    } else {
+      saved = await apiPost(`/sectors/${ministryPageId}/update`, payload);
+      showToast('Ministério atualizado com sucesso!', 'success');
+    }
+    await hydrateFromApi();
+    if (saved && saved.id) ministryPageId = saved.id;
+    await renderMinistryPage();
+  } catch (e) {
+    const msg = e && e.message && e.message !== 'API offline' ? e.message : 'Não foi possível salvar o ministério';
+    showToast(msg, 'error');
+  }
+}
+
+async function addMinistryMember() {
+  const sector = currentMinistrySector();
+  if (!sector) { showToast('Salve o ministério primeiro', 'warning'); return; }
+  const personId = ministrySelectedPersonId;
+  if (!personId) { showToast('Selecione uma pessoa', 'error'); return; }
+  const menu = document.getElementById('minAddCargosMenu');
+  const positions = menu ? [...menu.querySelectorAll('input:checked')].map(i => i.value) : [];
+  try {
+    await persistMinistryCargos();
+    await apiPost(`/sectors/${sector.id}/members`, {
+      personId,
+      positions,
+      actorId: currentUser ? currentUser.id : undefined,
+    });
+    await hydrateFromApi();
+    ministrySelectedPersonId = null;
+    const input = document.getElementById('minAddPersonSearch');
+    if (input) input.value = '';
+    hideMinistryPeopleSuggestions(true);
+    refreshMinistryMemberArea();
+    showToast('Membro vinculado ao ministério!', 'success');
+  } catch (e) {
+    showToast((e && e.message) || 'Não foi possível adicionar o membro', 'error');
+  }
+}
+
+async function saveMinistryMemberCargos(memberId) {
+  const sector = currentMinistrySector();
+  if (!sector) return;
+  const picker = document.querySelector(`.min-cargo-picker[data-member="${memberId}"]`);
+  if (!picker) return;
+  const positions = [...picker.querySelectorAll('input:checked')].map(i => i.value);
+  try {
+    await persistMinistryCargos();
+    await apiPost(`/sectors/${sector.id}/members/${memberId}/update`, {
+      positions,
+      actorId: currentUser ? currentUser.id : undefined,
+    });
+    await hydrateFromApi();
+    refreshMinistryMemberArea();
+    showToast('Cargos do membro atualizados', 'success');
+  } catch (e) {
+    showToast((e && e.message) || 'Não foi possível atualizar os cargos', 'error');
+    await renderMinistryPage();
+  }
+}
+
+async function removeMinistryMember(memberId) {
+  const sector = currentMinistrySector();
+  if (!sector) return;
+  const member = (sector.members || []).find(m => m.id === memberId);
+  const person = member ? (member.person || (member.user && member.user.person) || {}) : {};
+  const name = person.name || (member && member.user && member.user.email) || 'este membro';
+  if (!(await appConfirm(`Remover ${name} do ministério? A pessoa continua cadastrada na igreja.`, { title: 'Remover membro', confirmLabel: 'Remover', icon: 'person_remove', tone: 'danger' }))) return;
+  try {
+    await apiPost(`/sectors/${sector.id}/members/${memberId}/remove`, {
+      actorId: currentUser ? currentUser.id : undefined,
+    });
+    await hydrateFromApi();
+    refreshMinistryMemberArea();
+    showToast('Membro removido do ministério', 'success');
+  } catch (e) {
+    showToast((e && e.message) || 'Não foi possível remover o membro', 'error');
+  }
+}
+
+async function promoteMinistryMember(memberId) {
+  if (!canManageMinistryLeadership()) {
+    showToast('Apenas pastor ou admin master pode definir líderes', 'error');
+    return;
+  }
+  const sector = currentMinistrySector();
+  if (!sector) return;
+  const member = (sector.members || []).find(m => m.id === memberId);
+  const userId = member && member.userId;
+  if (!userId) { showToast('Este membro não possui acesso ao sistema', 'error'); return; }
+  const person = member.person || (member.user && member.user.person) || {};
+  if (!(await appConfirm(`Adicionar ${person.name || 'este membro'} como líder do ministério?`, { title: 'Adicionar líder', confirmLabel: 'Adicionar', icon: 'workspace_premium', tone: 'primary' }))) return;
+  try {
+    if (!ministryLeaderIds.includes(userId)) ministryLeaderIds.push(userId);
+    await persistMinistryLeaders();
+    renderMinistryMembers();
+    showToast('Liderança atualizada!', 'success');
+  } catch (e) {
+    showToast((e && e.message) || 'Não foi possível definir o líder', 'error');
+    await renderMinistryPage();
+  }
+}
+
+async function deleteMinistry() {
+  if (!canManageMinistryLeadership()) {
+    showToast('Apenas pastor ou admin master pode excluir ministérios', 'error');
+    return;
+  }
+  const sector = currentMinistrySector();
+  if (!sector) return;
+  if (!(await appConfirm(`Excluir o ministério "${sector.label}"? Escalas e vínculos deste ministério também serão removidos. Esta ação não pode ser desfeita.`, { title: 'Excluir ministério', confirmLabel: 'Excluir', icon: 'delete', tone: 'danger' }))) return;
+  try {
+    await apiPost(`/sectors/${sector.id}/delete`, { actorId: currentUser ? currentUser.id : undefined });
+    await hydrateFromApi();
+    ministryPageId = null;
+    navigateTo('setores');
+    showToast('Ministério excluído', 'success');
+  } catch (e) {
+    showToast((e && e.message) || 'Não foi possível excluir o ministério', 'error');
+  }
+}
+
+async function loadMinistrySchedules(sector) {
+  ministrySchedules = [];
+  if (!sector) return;
+  try {
+    const list = await apiGet('/schedules?sectorName=' + encodeURIComponent(sector.name));
+    const today = new Date().toISOString().slice(0, 10);
+    ministrySchedules = (Array.isArray(list) ? list : [])
+      .filter(s => s && s.date && s.date >= today)
+      .sort((a, b) => String(a.date + (a.timeStart || '')).localeCompare(String(b.date + (b.timeStart || ''))))
+      .slice(0, 6);
+  } catch (e) { ministrySchedules = []; }
+}
+
+function renderMinistryScheduleList() {
+  const box = document.getElementById('minSchedulesList');
+  if (!box) return;
+  if (!ministrySchedules.length) {
+    box.innerHTML = '<div class="min-empty-inline">Nenhuma escala futura cadastrada para este ministério.</div>';
+    return;
+  }
+  box.innerHTML = ministrySchedules.map(s => `
+    <div class="min-sched-row">
+      <div class="min-sched-date">
+        <strong>${escHtml(shortDate(s.date))}</strong>
+        <span>${escHtml(s.timeStart || '—')}${s.timeEnd ? ' - ' + escHtml(s.timeEnd) : ''}</span>
+      </div>
+      <div class="min-sched-info">
+        <strong>${escHtml(s.title || 'Escala')}</strong>
+        <small>${(s.members || []).length} pessoa${(s.members || []).length === 1 ? '' : 's'} escalada${(s.members || []).length === 1 ? '' : 's'} · ${escHtml(s.location || 'Templo Principal')}</small>
+      </div>
+      <span class="pill ${s.status === 'PUBLISHED' ? 'pill-green' : 'pill-orange'}">${s.status === 'PUBLISHED' ? 'Publicada' : 'Rascunho'}</span>
+      <button class="btn-ghost btn-sm" onclick="openMinistrySchedule('${s.id}')">Abrir</button>
+    </div>`).join('');
+}
+
+function openMinistrySchedules() {
+  const sector = currentMinistrySector();
+  if (!sector) { showToast('Salve o ministério primeiro', 'warning'); return; }
+  escMinistryName = sector.name;
+  escActiveId = null;
+  navigateTo('escalas');
+}
+
+function openMinistrySchedule(scheduleId) {
+  const sector = currentMinistrySector();
+  if (!sector) return;
+  escMinistryName = sector.name;
+  escActiveId = scheduleId;
+  navigateTo('escalas');
+}
+
+function ministryAuditActionLabel(action) {
+  const map = {
+    MINISTRY_CREATED: 'Ministério criado',
+    MINISTRY_UPDATED: 'Dados do ministério atualizados',
+    LEADER_CHANGED: 'Liderança alterada',
+    CARGOS_UPDATED: 'Cargos atualizados',
+    ACTIVE_CHANGED: 'Status de atividade alterado',
+    MEMBER_ADDED: 'Membro adicionado',
+    MEMBER_UPDATED: 'Membro atualizado',
+    MEMBER_REMOVED: 'Membro removido',
+    MINISTRY_DELETED: 'Ministério excluído',
+    INDICATION_ADDED: 'Indicação adicionada',
+    INDICATION_UPDATED: 'Indicação atualizada',
+    INDICATION_REMOVED: 'Indicação removida',
+  };
+  return map[action] || action;
+}
+
+function ministryAuditMeta(log) {
+  let detail = {};
+  try { detail = JSON.parse(log.afterData || '{}') || {}; } catch (e) { detail = {}; }
+  const positions = Array.isArray(detail.positions) ? detail.positions : [];
+  const cargos = Array.isArray(detail.cargos) ? detail.cargos : [];
+  const fieldLabels = {
+    label: 'nome', description: 'descrição', mission: 'missão', vision: 'visão',
+    foundedAt: 'fundação', color: 'cor', icon: 'ícone', notes: 'observações',
+    whatsappLink: 'WhatsApp', contactEmail: 'e-mail', isActive: 'status', cargos: 'cargos',
+  };
+  let description = '';
+  if (log.action === 'LEADER_CHANGED') {
+    const fromArr = Array.isArray(detail.leaderFrom) ? detail.leaderFrom.filter(Boolean) : [];
+    const toArr = Array.isArray(detail.leaderTo) ? detail.leaderTo.filter(Boolean) : [];
+    const from = fromArr.length ? fromArr.join(', ') : (typeof detail.leaderFrom === 'string' && detail.leaderFrom ? detail.leaderFrom : 'Sem líder');
+    const to = toArr.length ? toArr.join(', ') : (typeof detail.leaderTo === 'string' && detail.leaderTo ? detail.leaderTo : 'Sem líder');
+    description = `${from} → ${to}`;
+    const others = (Array.isArray(detail.changes) ? detail.changes : [])
+      .map(c => fieldLabels[c] || c)
+      .filter(label => label !== 'status');
+    if (others.length) description += ' · Também: ' + others.join(', ');
+  } else if (log.action === 'CARGOS_UPDATED') {
+    description = cargos.length ? cargos.join(', ') : 'Nenhum cargo restante';
+  } else if (log.action === 'ACTIVE_CHANGED') {
+    description = detail.active ? 'Ministério reativado' : 'Ministério desativado';
+  } else if (log.action === 'MINISTRY_CREATED') {
+    const leaders = Array.isArray(detail.leaders) ? detail.leaders : (detail.leader ? [detail.leader] : []);
+    description = `${detail.label || ''}${leaders.length ? ' · Líderes: ' + leaders.join(', ') : ''}`;
+  } else if (log.action === 'MEMBER_ADDED' || log.action === 'MEMBER_REMOVED') {
+    description = `${detail.personName || 'Membro'}${positions.length ? ' · ' + positions.join(', ') : ''}`;
+  } else if (log.action === 'MEMBER_UPDATED') {
+    description = `${detail.personName || 'Membro'}${positions.length ? ' · ' + positions.join(', ') : ''}`;
+  } else if (log.action === 'MINISTRY_DELETED') {
+    description = detail.label || '';
+  } else if (log.action === 'INDICATION_ADDED' || log.action === 'INDICATION_UPDATED' || log.action === 'INDICATION_REMOVED') {
+    description = `${detail.name || 'Indicação'}${detail.role ? ' · ' + detail.role : ''}`;
+  } else if (Array.isArray(detail.changes)) {
+    description = detail.changes.map(c => fieldLabels[c] || c).join(', ');
+  }
+  const actor = (log.user && log.user.person && log.user.person.name) || (log.user && log.user.email) || 'Sistema';
+  let when = '';
+  try {
+    when = new Date(log.createdAt).toLocaleString('pt-BR', {
+      day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
+    });
+  } catch (e) { when = log.createdAt || ''; }
+  return { description, actor, when, detail };
+}
+
+function renderMinistryAudit() {
+  const box = document.getElementById('minAuditList');
+  if (!box) return;
+  setText('minAuditCount', `${ministryAuditLogs.length} registro${ministryAuditLogs.length === 1 ? '' : 's'}`);
+  if (!ministryAuditLogs.length) {
+    box.innerHTML = '<div class="min-empty-inline">Nenhuma alteração registrada ainda. Liderança, cargos e membros passarão a aparecer aqui.</div>';
+    return;
+  }
+  box.innerHTML = ministryAuditLogs.map(log => {
+    const meta = ministryAuditMeta(log);
+    const action = log.action || '';
+    const icon = action === 'LEADER_CHANGED' ? 'crown'
+      : action === 'CARGOS_UPDATED' ? 'tags'
+        : action === 'MEMBER_ADDED' ? 'user-plus'
+          : action === 'MEMBER_REMOVED' ? 'user-minus'
+            : action === 'MEMBER_UPDATED' ? 'user-check'
+              : action === 'ACTIVE_CHANGED' ? 'power'
+                : action === 'MINISTRY_CREATED' ? 'sparkles'
+                  : action === 'MINISTRY_DELETED' ? 'trash-2'
+                    : 'pencil';
+    const tone = action === 'MEMBER_REMOVED' || action === 'MINISTRY_DELETED' ? 'red'
+      : action === 'LEADER_CHANGED' || action === 'ACTIVE_CHANGED' ? 'orange'
+        : action === 'MEMBER_ADDED' || action === 'MINISTRY_CREATED' ? 'green' : 'blue';
+    return `
+      <div class="min-audit-item">
+        <span class="min-audit-ico min-audit-${tone}"><i data-lucide="${icon}"></i></span>
+        <div class="min-audit-body">
+          <strong>${escHtml(ministryAuditActionLabel(action))}</strong>
+          ${meta.description ? `<p>${escHtml(meta.description)}</p>` : ''}
+          <small>${escHtml(meta.actor)} · ${escHtml(meta.when)}</small>
+        </div>
+      </div>`;
+  }).join('');
+  if (window.lucide) lucide.createIcons();
+}
+
+async function renderMinistryPage() {
+  const isNew = !ministryPageId;
+  let sector = ministryPageId ? currentMinistrySector() : null;
+  if (!isNew && !sector) {
+    await hydrateFromApi();
+    sector = currentMinistrySector();
+  }
+  if (!isNew && !sector) {
+    showToast('Ministério não encontrado', 'error');
+    navigateTo('setores');
+    return;
+  }
+
+  setText('minTitle', sector ? sector.label : 'Novo Ministério');
+  setText('minSub', sector
+    ? (sector.description || 'Todas as informações do ministério em um só lugar.')
+    : 'Crie um novo ministério e depois vincule líder, cargos e membros.');
+  setText('minEyebrow', sector ? 'Dados e equipe' : 'Novo ministério');
+  setText('minSaveLabel', sector ? 'Salvar ministério' : 'Criar ministério');
+  setText('minActivePill', sector ? (sector.isActive === false ? 'Inativo' : 'Ativo') : 'Novo');
+  const pill = document.getElementById('minActivePill');
+  if (pill) pill.className = 'pill ' + (sector ? (sector.isActive === false ? 'pill-red' : 'pill-green') : 'pill-blue');
+
+  const setValue = (id, value) => { const el = document.getElementById(id); if (el) el.value = value == null ? '' : value; };
+  setValue('minLabel', sector ? sector.label : '');
+  setValue('minDescription', sector ? sector.description : '');
+  setValue('minWhatsapp', sector ? sector.whatsappLink : '');
+  setValue('minContactEmail', sector ? sector.contactEmail : '');
+  setValue('minNotes', sector ? sector.notes : '');
+  const activeEl = document.getElementById('minActive');
+  if (activeEl) {
+    activeEl.checked = sector ? sector.isActive !== false : true;
+    activeEl.disabled = !canManageMinistryLeadership();
+  }
+  const activeWrap = document.getElementById('minActiveWrap');
+  if (activeWrap) activeWrap.style.display = isNew ? 'none' : '';
+  const deleteBtn = document.getElementById('minDeleteBtn');
+  if (deleteBtn) deleteBtn.style.display = (isNew || !canManageMinistryLeadership()) ? 'none' : '';
+
+  ministryCargosDraft = sector ? (sector.cargosList || parseCargos(sector.cargos)).slice() : [];
+
+  try {
+    const users = await apiGet('/users');
+    ministryUsers = Array.isArray(users) ? users : [];
+  } catch (e) { ministryUsers = []; }
+
+  ministryLeaderIds = sector
+    ? (sector.leaderUserIds && sector.leaderUserIds.length
+      ? sector.leaderUserIds.slice()
+      : (sector.leaderUserId ? [sector.leaderUserId] : []))
+    : [];
+  const leaderSearch = document.getElementById('minLeaderSearch');
+  if (leaderSearch) {
+    leaderSearch.value = '';
+    leaderSearch.disabled = !canManageMinistryLeadership();
+  }
+  hideMinistryLeaderSuggestions(true);
+  renderMinistryLeaderChips();
+
+  ministrySelectedPersonId = null;
+  const personSearch = document.getElementById('minAddPersonSearch');
+  if (personSearch) personSearch.value = '';
+  hideMinistryPeopleSuggestions(true);
+
+  await loadMinistrySchedules(sector);
+
+  const showExisting = !isNew;
+  ['minMembersPanel', 'minSchedulesPanel', 'minAuditPanel'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = showExisting ? '' : 'none';
+  });
+
+  if (showExisting) {
+    try {
+      const logs = await apiGet(`/sectors/${sector.id}/audit`);
+      ministryAuditLogs = Array.isArray(logs) ? logs : [];
+    } catch (e) { ministryAuditLogs = []; }
+  } else {
+    ministryAuditLogs = [];
+    ministrySchedules = [];
+  }
+
+  renderMinistryCargos();
+  renderMinistryIndications();
+  renderMinistryScheduleList();
+  renderMinistryAudit();
+  renderMinistryStats(sector);
+  renderMinistryInfo(sector);
+  if (window.lucide) lucide.createIcons();
+
+  if (ministryTargetSection) {
+    const targetMap = { members: 'minMembersPanel', leader: 'minLeaderBlock', cargos: 'minCargosBlock' };
+    const targetId = targetMap[ministryTargetSection];
+    ministryTargetSection = null;
+    if (targetId) {
+      setTimeout(() => {
+        const el = document.getElementById(targetId);
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        if (targetId === 'minLeaderBlock') {
+          const sel = document.getElementById('minLeaderSearch');
+          if (sel) sel.focus();
+        }
+      }, 140);
+    }
+  }
 }
 
 function renderSetores() {
@@ -1377,6 +3946,7 @@ function accessibleMinistries() {
   const uid = currentUser && currentUser.id;
   if (uid) {
     return sectors.filter(s =>
+      (s.leaderUserIds || []).includes(uid) ||
       s.leaderUserId === uid ||
       (s.members || []).some(m => m.userId === uid)
     );
@@ -1391,7 +3961,7 @@ function accessibleMinistries() {
 function canEditMinistry(sector) {
   if (isFullAccess()) return true;
   const uid = currentUser && currentUser.id;
-  return !!uid && !!sector && sector.leaderUserId === uid;
+  return !!uid && !!sector && ((sector.leaderUserIds || []).includes(uid) || sector.leaderUserId === uid);
 }
 
 function currentMinistry() {
@@ -1424,7 +3994,7 @@ function renderMinistryPickerMenu() {
         <strong>${s.label}</strong>
         <small>${s.leaderName ? 'Líder: ' + s.leaderName : 'Sem líder definido'}</small>
       </span>
-      ${s.leaderUserId && currentUser && s.leaderUserId === currentUser.id ? '<span class="pill pill-blue mp-item-tag">Seu ministério</span>' : ''}
+      ${currentUser && ((s.leaderUserIds || []).includes(currentUser.id) || s.leaderUserId === currentUser.id) ? '<span class="pill pill-blue mp-item-tag">Seu ministério</span>' : ''}
     </button>
   `).join('');
   if (window.lucide) lucide.createIcons();
@@ -1574,6 +4144,7 @@ function escHeadHTML(ministry, act, opts) {
         <div class="ministry-picker-menu" id="ministryPickerMenu" style="display:none"></div>
       </div>
       ${act ? `<select class="esc-sched-select" onchange="escPickSchedule(this.value)">${schedOptions}</select>` : ''}
+      ${edit ? `<button class="btn-secondary" onclick="openMinistryPage('${ministry.id}')"><i data-lucide="settings"></i> Gerenciar Ministério</button>` : ''}
       <button class="btn-secondary" onclick="showToast('Preparando relatório para impressão…','info')"><i data-lucide="printer"></i> Exportar / Imprimir</button>
       ${edit ? `<button class="btn-secondary" onclick="escNotifyPending()"><i data-lucide="bell"></i> Notificar Pendentes</button>` : ''}
       ${edit ? `<button class="btn-primary" onclick="escOpenAddVolunteer()"><i data-lucide="user-plus"></i> Adicionar Voluntário</button>` : ''}
@@ -1967,8 +4538,8 @@ function escBankFilter(q) {
   });
 }
 
-function escMenuMore(id) {
-  if (confirm('Excluir esta escala? Os voluntários escalados serão removidos.')) escDeleteSchedule(id);
+async function escMenuMore(id) {
+  if (await appConfirm('Excluir esta escala? Os voluntários escalados serão removidos.', { title: 'Excluir escala', confirmLabel: 'Excluir', icon: 'event_busy', tone: 'danger' })) await escDeleteSchedule(id);
 }
 
 function escAttr(s) { return String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'"); }
@@ -2180,91 +4751,323 @@ async function escSaveNew() {
   } catch (e) { showToast('API indisponível', 'error'); }
 }
 
-function openMemberModal(id) {
-  const member = id ? mockMembers.find(m => m.id === id) : null;
-  document.getElementById('modalTitle').textContent = member ? 'Editar Membro' : 'Novo Membro';
-  document.getElementById('modalBody').innerHTML = `
-    <div class="form-group">
-      <label>Nome Completo</label>
-      <input type="text" id="memberName" value="${member ? member.name : ''}" placeholder="Ex: Joao da Silva">
-    </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label>Email</label>
-        <input type="email" id="memberEmail" value="${member ? member.email : ''}" placeholder="email@exemplo.com">
-      </div>
-      <div class="form-group">
-        <label>Telefone</label>
-        <input type="tel" id="memberPhone" value="${member ? member.phone : ''}" placeholder="(00) 00000-0000">
-      </div>
-    </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label>Setor</label>
-        <select id="memberSector">
-          <option value="Louvor" ${member && member.sector === 'Louvor' ? 'selected' : ''}>Louvor</option>
-          <option value="Midia" ${member && member.sector === 'Midia' ? 'selected' : ''}>Midia</option>
-          <option value="Recepcao" ${member && member.sector === 'Recepcao' ? 'selected' : ''}>Recepcao</option>
-          <option value="Infantil" ${member && member.sector === 'Infantil' ? 'selected' : ''}>Infantil</option>
-          <option value="Intercessao" ${member && member.sector === 'Intercessao' ? 'selected' : ''}>Intercessao</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label>Cargo</label>
-        <input type="text" id="memberRole" value="${member ? member.role : ''}" placeholder="Ex: Vocalista">
-      </div>
-    </div>
-    <div class="modal-footer" style="padding:16px 0 0;border-top:1px solid #F3F4F6;margin-top:8px">
-      <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
-      <button class="btn-primary" onclick="saveMember(${id ? `'${id}'` : 'null'})">
-        <span class="material-symbols-outlined" style="font-size:18px">save</span> Salvar
-      </button>
-    </div>
-  `;
-  openModal();
+let memberFormEditId = null;
+let memberFormSectors = [];
+let memberFormPositions = [];
+
+function openNewMemberPage(id) {
+  memberFormEditId = id || null;
+  const navEl = document.querySelector('.nav-item[data-section="pessoas"]');
+  navigateTo('novo-membro', navEl);
 }
 
-function editMember(id) { openMemberModal(id); }
+function editMember(id) { openNewMemberPage(id); }
 
-async function saveMember(id) {
-  const name = document.getElementById('memberName').value.trim();
-  const email = document.getElementById('memberEmail').value.trim();
-  const phone = document.getElementById('memberPhone').value.trim();
-  const sector = document.getElementById('memberSector').value;
-  const role = document.getElementById('memberRole').value.trim();
-
-  if (!name || !email || !phone || !role) { showToast('Preencha todos os campos', 'error'); return; }
-
-  const sectorMap = { 'Louvor': 'louvor', 'Midia': 'midia', 'Recepcao': 'portaria', 'Infantil': 'infantil', 'Intercessao': 'intercessao' };
-  const payload = { name, email, phone, sector, role, sectorName: sectorMap[sector] || 'louvor' };
-
+function parseCargos(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) return value;
   try {
-    if (typeof apiPost === 'function' && apiOnline()) {
-      if (id) await apiPost(`/people/${id}/update`, payload);
-      else await apiPost('/people', { ...payload, createLogin: true, password: 'membro123', status: 'ACTIVE' });
-      await hydrateFromApi();
-      showToast(id ? 'Membro atualizado no banco!' : 'Membro cadastrado no banco!', 'success');
-    } else {
-      if (id) {
-        const m = mockMembers.find(m => m.id === id);
-        Object.assign(m, { name, email, phone, sector, role });
-        showToast('Membro atualizado com sucesso!');
-      } else {
-        mockMembers.push({
-          id: 'local-' + Date.now(), name, email, phone, sector, role,
-          status: 'integracao', gender: 'm', voluntario: false, lider: false, pastoral: false,
-          login: true, joined: new Date().toISOString().split('T')[0],
-          tags: [sector], cell: null, attendance: 0, baptism: '—', churchTime: 'Novo membro', note: '',
-        });
-        showToast('Membro adicionado com sucesso!');
-      }
-    }
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
   } catch (e) {
-    showToast('Erro ao salvar: API indisponível', 'error');
+    return String(value).split(',').map(v => v.trim()).filter(Boolean);
+  }
+}
+
+async function populateMemberSectors(selectedKey) {
+  const sel = document.getElementById('nmSector');
+  if (!sel) return;
+  if (!memberFormSectors.length) {
+    try {
+      const data = await apiGet('/sectors');
+      memberFormSectors = (data || []).map(s => ({
+        name: s.name,
+        label: s.label,
+        cargos: parseCargos(s.cargos),
+      }));
+    } catch (e) {
+      memberFormSectors = [];
+    }
+  }
+  const current = selectedKey !== undefined ? selectedKey : sel.value;
+  sel.innerHTML = '<option value="">Sem ministério — membro comum</option>' +
+    memberFormSectors.map(s => `<option value="${s.name}">${s.label}</option>`).join('');
+  sel.value = current && memberFormSectors.some(s => s.name === current) ? current : '';
+  updateMemberPositionOptions();
+}
+
+function updateMemberPositionOptions() {
+  const sel = document.getElementById('nmSector');
+  const menu = document.getElementById('nmCargoMenu');
+  if (!sel || !menu) return;
+  const sector = memberFormSectors.find(s => s.name === sel.value);
+  const cargos = (sector && sector.cargos) ? sector.cargos : [];
+  if (!sel.value) memberFormPositions = [];
+  else memberFormPositions = memberFormPositions.filter(c => cargos.includes(c));
+  menu.innerHTML = cargos.length
+    ? cargos.map(c => {
+      const safe = String(c).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+      return `<label class="cargo-option">
+        <input type="checkbox" value="${escHtml(c)}" ${memberFormPositions.includes(c) ? 'checked' : ''} onchange="toggleMemberCargo('${safe}', this.checked)">
+        <span>${escHtml(c)}</span>
+      </label>`;
+    }).join('')
+    : `<div class="cargo-empty">${sel.value ? 'Este ministério ainda não tem cargos cadastrados.' : 'Escolha um ministério para ver os cargos.'}</div>`;
+  updateMemberCargoLabel();
+}
+
+function updateMemberCargoLabel() {
+  const label = document.getElementById('nmCargoLabel');
+  if (!label) return;
+  label.textContent = memberFormPositions.length ? memberFormPositions.join(', ') : 'Selecione os cargos';
+}
+
+function toggleMemberCargo(cargo, checked) {
+  if (checked) {
+    if (!memberFormPositions.includes(cargo)) memberFormPositions.push(cargo);
+  } else {
+    memberFormPositions = memberFormPositions.filter(c => c !== cargo);
+  }
+  updateMemberCargoLabel();
+}
+
+function closeMemberCargoMenu() {
+  const menu = document.getElementById('nmCargoMenu');
+  if (menu) menu.style.display = 'none';
+}
+
+function toggleMemberCargoMenu(event) {
+  if (event) event.stopPropagation();
+  const menu = document.getElementById('nmCargoMenu');
+  if (!menu) return;
+  const isOpen = menu.style.display !== 'none';
+  closeMemberCargoMenu();
+  if (isOpen) return;
+  updateMemberPositionOptions();
+  menu.style.display = 'block';
+}
+
+function updateMemberAccessUI() {
+  const checked = !!(document.getElementById('nmAccess') || {}).checked;
+  const fields = document.getElementById('nmAccessFields');
+  if (fields) fields.style.display = checked ? '' : 'none';
+}
+
+function renderMemberFormPage() {
+  const member = memberFormEditId ? mockMembers.find(m => m.id === memberFormEditId) : null;
+  setText('nmTitle', member ? 'Editar Membro' : 'Novo Membro');
+  setText('nmSaveLabel', member ? 'Salvar alterações' : 'Cadastrar membro');
+
+  const nameEl = document.getElementById('nmName');
+  const emailEl = document.getElementById('nmEmail');
+  const phoneEl = document.getElementById('nmPhone');
+  const accessEl = document.getElementById('nmAccess');
+  const roleEl = document.getElementById('nmRole');
+  const passEl = document.getElementById('nmPassword');
+  const accessBox = document.getElementById('nmAccessBox');
+  const accessNote = document.getElementById('nmAccessNote');
+
+  if (nameEl) nameEl.value = member ? member.name : '';
+  if (emailEl) emailEl.value = member && member.email !== '—' ? member.email : '';
+  if (phoneEl) phoneEl.value = member && member.phone !== '—' ? member.phone : '';
+  memberFormPositions = member
+    ? ((member.positions && member.positions.length) ? member.positions.slice() : parseCargos(member.position))
+    : [];
+  closeMemberCargoMenu();
+  if (accessBox) accessBox.style.display = canManageAccess() ? '' : 'none';
+  if (accessEl) accessEl.checked = !!(member && member.webAccess);
+  if (roleEl) roleEl.value = member && member.role === 'Pastor' ? 'PASTOR' : 'MEMBRO';
+  if (passEl) passEl.value = 'membro123';
+  if (accessNote) {
+    accessNote.textContent = member && member.hasUser
+      ? 'Este membro já possui usuário. Desmarcar revoga o acesso; a senha não é alterada aqui.'
+      : 'O acesso é opcional. Sem acesso, a pessoa continua cadastrada como membro.';
+  }
+
+  const extraFields = [
+    ['nmMotherName', 'motherName'], ['nmFatherName', 'fatherName'], ['nmSex', 'sex'],
+    ['nmMaritalStatus', 'maritalStatus'], ['nmBirthdate', 'birthdate'], ['nmCpf', 'cpf'],
+    ['nmRg', 'rg'], ['nmBirthplace', 'birthplace'], ['nmProfession', 'profession'],
+    ['nmEducation', 'education'], ['nmAddress', 'address'], ['nmZipCode', 'zipCode'],
+    ['nmNeighborhood', 'neighborhood'], ['nmCity', 'city'], ['nmState', 'state'],
+    ['nmResidencePhone', 'residencePhone'], ['nmSpouseName', 'spouseName'],
+    ['nmPreviouslyMarried', 'previouslyMarried'], ['nmCivilMarriageDate', 'civilMarriageDate'],
+    ['nmReligiousMarriageDate', 'religiousMarriageDate'], ['nmChildren', 'children'],
+    ['nmConversionDate', 'conversionDate'], ['nmMembershipRecordNumber', 'membershipRecordNumber'],
+    ['nmBaptismDate', 'baptismDate'], ['nmBaptismPlace', 'baptismPlace'],
+    ['nmPreviousChurches', 'previousChurches'], ['nmLastChurch', 'lastChurch'],
+    ['nmPreviousPastorContact', 'previousPastorContact'], ['nmPreviousChurchAddress', 'previousChurchAddress'],
+    ['nmMinistryInterest', 'ministryInterest'], ['nmInterviewedBy', 'interviewedBy'],
+    ['nmHomeVisitDate', 'homeVisitDate'], ['nmMembershipNotes', 'membershipNotes'],
+  ];
+  extraFields.forEach(([id, key]) => {
+    const el = document.getElementById(id);
+    if (el) el.value = member ? (member[key] || '') : '';
+  });
+
+  updateMemberAccessUI();
+  populateMemberSectors(member ? member.sectorKey : '');
+  refreshIcons();
+}
+
+async function saveMemberPage() {
+  if (!canAccess('novo-membro')) {
+    showToast('Você não tem acesso a este módulo', 'error');
     return;
   }
-  closeModal();
-  renderMembers();
+
+  const nameEl = document.getElementById('nmName');
+  const emailEl = document.getElementById('nmEmail');
+  const phoneEl = document.getElementById('nmPhone');
+  const sectorEl = document.getElementById('nmSector');
+  const accessEl = document.getElementById('nmAccess');
+  const roleEl = document.getElementById('nmRole');
+  const passEl = document.getElementById('nmPassword');
+
+  const name = (nameEl ? nameEl.value : '').trim();
+  if (!name) {
+    showToast('Informe o nome completo', 'error');
+    if (nameEl) nameEl.focus();
+    return;
+  }
+  const email = (emailEl ? emailEl.value : '').trim().toLowerCase();
+  const phone = (phoneEl ? phoneEl.value : '').trim();
+  const sectorName = sectorEl ? sectorEl.value : '';
+  const positions = memberFormPositions.slice();
+  const wantsAccess = !!(accessEl && accessEl.checked);
+  const roleName = roleEl && roleEl.value === 'PASTOR' ? 'PASTOR' : 'MEMBRO';
+  const password = (passEl && passEl.value.trim()) || 'membro123';
+
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    showToast('Informe um e-mail válido', 'error');
+    if (emailEl) emailEl.focus();
+    return;
+  }
+  if (wantsAccess && !email) {
+    showToast('Informe o e-mail para liberar o acesso ao sistema', 'error');
+    if (emailEl) emailEl.focus();
+    return;
+  }
+  if (wantsAccess && !canManageAccess()) {
+    showToast('Apenas pastor ou admin master pode liberar acesso', 'error');
+    return;
+  }
+  const sector = memberFormSectors.find(s => s.name === sectorName);
+  if (!sectorName && positions.length) {
+    showToast('Escolha um ministério antes de informar cargos', 'error');
+    if (sectorEl) sectorEl.focus();
+    return;
+  }
+  if (sector && (sector.cargos || []).length) {
+    const invalid = positions.filter(p => !sector.cargos.includes(p));
+    if (invalid.length) {
+      showToast(`Cargo não disponível: ${invalid.join(', ')}. Disponíveis: ${sector.cargos.join(', ')}`, 'error');
+      updateMemberPositionOptions();
+      return;
+    }
+  }
+
+  const payload = {
+    name,
+    email,
+    phone,
+    sectorName,
+    positions,
+    position: positions[0] || '',
+    createdByRole: apiActorRole(),
+  };
+  const profileFieldMap = [
+    ['nmMotherName', 'motherName'], ['nmFatherName', 'fatherName'], ['nmSex', 'sex'],
+    ['nmMaritalStatus', 'maritalStatus'], ['nmBirthdate', 'birthdate'], ['nmCpf', 'cpf'],
+    ['nmRg', 'rg'], ['nmBirthplace', 'birthplace'], ['nmProfession', 'profession'],
+    ['nmEducation', 'education'], ['nmAddress', 'address'], ['nmZipCode', 'zipCode'],
+    ['nmNeighborhood', 'neighborhood'], ['nmCity', 'city'], ['nmState', 'state'],
+    ['nmResidencePhone', 'residencePhone'], ['nmSpouseName', 'spouseName'],
+    ['nmPreviouslyMarried', 'previouslyMarried'], ['nmCivilMarriageDate', 'civilMarriageDate'],
+    ['nmReligiousMarriageDate', 'religiousMarriageDate'], ['nmChildren', 'children'],
+    ['nmConversionDate', 'conversionDate'], ['nmMembershipRecordNumber', 'membershipRecordNumber'],
+    ['nmBaptismDate', 'baptismDate'], ['nmBaptismPlace', 'baptismPlace'],
+    ['nmPreviousChurches', 'previousChurches'], ['nmLastChurch', 'lastChurch'],
+    ['nmPreviousPastorContact', 'previousPastorContact'], ['nmPreviousChurchAddress', 'previousChurchAddress'],
+    ['nmMinistryInterest', 'ministryInterest'], ['nmInterviewedBy', 'interviewedBy'],
+    ['nmHomeVisitDate', 'homeVisitDate'], ['nmMembershipNotes', 'membershipNotes'],
+  ];
+  profileFieldMap.forEach(([id, key]) => {
+    const el = document.getElementById(id);
+    if (el) payload[key] = el.value.trim();
+  });
+
+  try {
+    if (typeof apiPost !== 'function' || !apiOnline()) {
+      showToast('API offline. Inicie o servidor local para salvar.', 'error');
+      return;
+    }
+
+    if (memberFormEditId) {
+      const member = mockMembers.find(m => m.id === memberFormEditId);
+      const hadAccess = !!(member && member.webAccess);
+      const currentRole = member && member.role === 'Pastor' ? 'PASTOR' : 'MEMBRO';
+      const saved = await apiPost(`/people/${memberFormEditId}/update`, payload);
+      if (wantsAccess !== hadAccess || (wantsAccess && roleName !== currentRole)) {
+        await apiPost(`/people/${memberFormEditId}/access`, {
+          enabled: wantsAccess,
+          roleName,
+          password,
+          createdByRole: apiActorRole(),
+        });
+      }
+      if (saved && saved.id) selectedMemberId = saved.id;
+      await hydrateFromApi();
+      showToast('Membro atualizado com sucesso!', 'success');
+    } else {
+      const saved = await apiPost('/people', {
+        ...payload,
+        createLogin: wantsAccess,
+        roleName,
+        password,
+      });
+      if (saved && saved.id) selectedMemberId = saved.id;
+      await hydrateFromApi();
+      showToast('Membro cadastrado com sucesso!', 'success');
+    }
+
+    memberFormEditId = null;
+    navigateTo('pessoas');
+  } catch (e) {
+    const msg = e && e.message && e.message !== 'API offline'
+      ? e.message
+      : 'Não foi possível salvar. Verifique se a API está online.';
+    showToast(msg, 'error');
+  }
+}
+
+async function toggleMemberAccess(id, enable) {
+  if (!canManageAccess()) {
+    showToast('Apenas pastor ou admin master pode alterar o acesso', 'error');
+    return;
+  }
+  const member = mockMembers.find(m => m.id === id);
+  if (!member) return;
+  const label = enable ? 'liberar' : 'revogar';
+  if (!(await appConfirm(`Deseja ${label} o acesso de ${member.name} ao sistema web?`, {
+    title: enable ? 'Liberar acesso' : 'Revogar acesso',
+    confirmLabel: enable ? 'Liberar' : 'Revogar',
+    icon: enable ? 'lock_open' : 'lock',
+    tone: enable ? 'primary' : 'danger',
+  }))) return;
+  try {
+    await apiPost(`/people/${member._apiId || id}/access`, {
+      enabled: !!enable,
+      roleName: member.role === 'Pastor' ? 'PASTOR' : 'MEMBRO',
+      password: 'membro123',
+      createdByRole: apiActorRole(),
+    });
+    await hydrateFromApi();
+    renderMembers();
+    showToast(enable ? 'Acesso liberado!' : 'Acesso revogado!', 'success');
+  } catch (e) {
+    showToast((e && e.message) || 'Não foi possível alterar o acesso', 'error');
+  }
 }
 
 function deleteMember(id) {
@@ -2534,7 +5337,55 @@ document.addEventListener('DOMContentLoaded', function () {
 
 // ===== MODAL =====
 function openModal() { document.getElementById('modalOverlay').classList.add('open'); }
-function closeModal() { document.getElementById('modalOverlay').classList.remove('open'); }
+function closeModal() {
+  document.getElementById('modalOverlay').classList.remove('open');
+  const modalEl = document.querySelector('#modalOverlay .modal');
+  if (modalEl) modalEl.classList.remove('modal-lg');
+}
+
+// ===== CONFIRMACAO EM MODAL (substitui confirm() do navegador) =====
+let _confirmResolver = null;
+
+function appConfirm(message, options) {
+  options = options || {};
+  const overlay = document.getElementById('confirmOverlay');
+  if (!overlay) return Promise.resolve(false);
+  if (_confirmResolver) {
+    const previous = _confirmResolver;
+    _confirmResolver = null;
+    previous(false);
+  }
+  const title = document.getElementById('confirmTitle');
+  const messageEl = document.getElementById('confirmMessage');
+  const ok = document.getElementById('confirmOkBtn');
+  const icon = document.getElementById('confirmIcon');
+  const tone = options.tone === 'primary' ? 'primary' : 'danger';
+  if (title) title.textContent = options.title || 'Confirmar ação';
+  if (messageEl) messageEl.textContent = message || 'Deseja continuar?';
+  if (ok) {
+    ok.textContent = options.confirmLabel || 'Confirmar';
+    ok.className = tone === 'primary' ? 'btn-primary' : 'btn-danger';
+  }
+  if (icon) {
+    icon.className = 'confirm-ico ' + tone;
+    icon.innerHTML = `<span class="material-symbols-outlined">${options.icon || (tone === 'primary' ? 'help' : 'warning')}</span>`;
+  }
+  overlay.classList.add('open');
+  setTimeout(() => { if (ok) ok.focus(); }, 60);
+  return new Promise(resolve => { _confirmResolver = resolve; });
+}
+
+function resolveConfirm(result) {
+  const overlay = document.getElementById('confirmOverlay');
+  if (overlay) overlay.classList.remove('open');
+  const resolver = _confirmResolver;
+  _confirmResolver = null;
+  if (resolver) resolver(!!result);
+}
+
+function closeConfirm() {
+  resolveConfirm(false);
+}
 
 // ===== TOAST =====
 function showToast(message, type) {
@@ -2582,6 +5433,7 @@ function vzoom() {
 
 function closeDropdowns() {
   document.querySelectorAll('.dropdown.open').forEach(d => d.classList.remove('open'));
+  closeDeptMenu();
 }
 
 function placeFloatingMenu(menu, event) {
@@ -2740,18 +5592,18 @@ function toggleCantinaStatus() {
 function updateNextService() {
   const el = document.getElementById('nextServiceText');
   if (!el) return;
-  const today = new Date().toISOString().split('T')[0];
-  const upcoming = mockEvents
-    .filter(e => e.status === 'upcoming' && e.date >= today)
-    .sort((a, b) => a.date.localeCompare(b.date));
-  const next = upcoming[0] || mockEvents.find(e => e.status === 'upcoming');
+  const next = agendaNextCulto();
   if (!next) { el.textContent = 'Nenhum culto agendado'; return; }
-  const d = new Date(next.date + 'T00:00:00');
-  const weekday = d.toLocaleDateString('pt-BR', { weekday: 'long' });
-  const hora = next.time.endsWith(':00') ? next.time.slice(0, 2) + 'h' : next.time;
-  const confirmados = 85; // mock de confirmacao
-  const dia = weekday.charAt(0).toUpperCase() + weekday.slice(1);
-  el.textContent = `Culto ${dia} ${hora}: ${confirmados}% Confirmados`;
+  const d = agendaParseDate(next.date);
+  const weekday = agendaWeekday(d);
+  const hora = next.timeStart ? next.timeStart.slice(0, 5).replace(':', 'h') : '';
+  const schedules = agendaSchedulesForDate(next.date);
+  const total = schedules.reduce((sum, s) => sum + (s.totalPositions || (s.members || []).length || 0), 0);
+  const confirmed = schedules.reduce((sum, s) => sum + (s.confirmedCount || 0), 0);
+  const pct = total ? Math.round((confirmed / total) * 100) : 0;
+  el.textContent = total
+    ? `Culto ${weekday} ${hora}: ${pct}% Confirmados`
+    : `Culto ${weekday} ${hora}: ${next.title}`;
 }
 
 // ===== INIT =====
@@ -2792,6 +5644,7 @@ document.addEventListener('DOMContentLoaded', function () {
   if (typeof hydrateFromApi === 'function') {
     hydrateFromApi().then((ok) => {
       if (!ok) return;
+      updateNextService();
       const activeSection = document.querySelector('.page-section.active');
       const activeId = activeSection ? activeSection.id.replace('section-', '') : 'dashboard';
       refreshSection(activeId);
@@ -2801,6 +5654,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
   // Fecha dropdowns ao clicar fora
   document.addEventListener('click', function (e) {
+    if (!e.target.closest('#nmCargoSelect')) closeMemberCargoMenu();
+    if (!e.target.closest('#deptActionMenu') && !e.target.closest('.dept-more')) closeDeptMenu();
     if (!e.target.closest('.dropdown') && !e.target.closest('.sidebar-user') && !e.target.closest('.topbar-right') && !e.target.closest('.dropdown-anchor')) {
       closeDropdowns();
     }
@@ -2830,5 +5685,5 @@ document.addEventListener('DOMContentLoaded', function () {
 
 // Close modal on Escape
 document.addEventListener('keydown', function (e) {
-  if (e.key === 'Escape') { closeModal(); closeDropdowns(); }
+  if (e.key === 'Escape') { closeModal(); closeDropdowns(); closeConfirm(); }
 });

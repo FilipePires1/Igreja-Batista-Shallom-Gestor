@@ -13,13 +13,10 @@ const now = () => new Date().toISOString();
 async function main() {
   console.log('Seeding database...');
 
-  // Roles
+  // Papéis do sistema: admin master, pastor e membro.
   const roles = [
-    { name: 'SUPER_ADMIN', label: 'Super Admin', level: 100, color: '#DC2626' },
+    { name: 'SUPER_ADMIN', label: 'Admin Master', level: 100, color: '#DC2626' },
     { name: 'PASTOR', label: 'Pastor', level: 80, color: '#003C64' },
-    { name: 'PRESBITERO', label: 'Presbítero', level: 70, color: '#003C64' },
-    { name: 'LIDER', label: 'Líder', level: 60, color: '#3CBEC8' },
-    { name: 'COORDENADOR', label: 'Coordenador', level: 50, color: '#059669' },
     { name: 'MEMBRO', label: 'Membro', level: 20, color: '#6B7280' },
   ];
 
@@ -34,25 +31,8 @@ async function main() {
 
   // ===== PERMISSÕES PADRÃO POR CARGO =====
   // PASTOR e SUPER_ADMIN têm acesso total (implícito, sem linhas).
-  // Demais cargos: módulos (mod:*) + ações específicas — o pastor pode ajustar
-  // depois na tela de Configurações > Permissões.
+  // MEMBRO: módulos básicos. O acesso ao sistema em si é liberado por pessoa.
   const defaultPerms = {
-    PRESBITERO: [
-      'mod:dashboard', 'mod:pessoas', 'mod:setores', 'mod:escalas', 'mod:agenda', 'mod:avisos',
-      'mod:app-publico', 'mod:cantina', 'mod:relatorios',
-      'pessoas:criar', 'pessoas:editar', 'setores:gerenciar', 'avisos:criar', 'avisos:editar',
-      'escalas:editar', 'agenda:editar', 'cantina:gerenciar',
-    ],
-    LIDER: [
-      'mod:dashboard', 'mod:pessoas', 'mod:setores', 'mod:escalas', 'mod:agenda', 'mod:avisos',
-      'mod:app-publico', 'mod:cantina',
-      'pessoas:editar', 'avisos:criar', 'escalas:editar', 'cantina:gerenciar',
-    ],
-    COORDENADOR: [
-      'mod:dashboard', 'mod:pessoas', 'mod:setores', 'mod:escalas', 'mod:agenda', 'mod:avisos',
-      'mod:app-publico', 'mod:cantina',
-      'pessoas:criar', 'pessoas:editar', 'avisos:criar', 'escalas:editar',
-    ],
     MEMBRO: [
       'mod:dashboard', 'mod:escalas', 'mod:agenda', 'mod:avisos', 'mod:app-publico',
     ],
@@ -72,6 +52,8 @@ async function main() {
   await prisma.scheduleMember.deleteMany({});
   await prisma.schedule.deleteMany({});
   await prisma.task.deleteMany({});
+  await prisma.sectorLeader.deleteMany({});
+  await prisma.sectorIndication.deleteMany({});
   await prisma.sectorMember.deleteMany({});
   await prisma.announcement.updateMany({ where: { sectorId: { not: null } }, data: { sectorId: null } });
   await prisma.permission.deleteMany({ where: { sectorId: { not: null } } });
@@ -87,8 +69,8 @@ async function main() {
     { name: 'juniores', label: 'Ministério Juniores', icon: 'users', color: '#16A34A', order: 7, groupTag: 'pastoral', templateKey: 'base', capacity: 35, scheduleText: 'Dom 09h & 18h', description: 'Kids 8 a 11 anos' },
     { name: 'criancas', label: 'Ministério Crianças', icon: 'baby', color: '#DC648C', order: 8, groupTag: 'pastoral', templateKey: 'base', capacity: 40, scheduleText: 'Dom 09h & 18h', description: 'Berçário e Kids 4 a 7 anos' },
     { name: 'ensino_ebd', label: 'Ministério Ensino, EBD e Culto Infantil', icon: 'book-open', color: '#3CBEC8', order: 9, groupTag: 'pastoral', templateKey: 'ensino', capacity: 60, scheduleText: 'Dom 09h (EBD) & Qua 19h30', description: 'Escola Bíblica Dominical e ensino infantil' },
-    { name: 'louvor', label: 'Ministério de Louvor', icon: 'music', color: '#103B5F', order: 10, groupTag: 'cultos', templateKey: 'louvor', capacity: 32, scheduleText: 'Dom 09h & 18h', highlightText: 'Ensaio geral quarta 20h', description: 'Louvor e adoração' },
-    { name: 'midia', label: 'Ministério de Mídia', icon: 'video', color: '#16A2AD', order: 11, groupTag: 'cultos', templateKey: 'base', capacity: 20, scheduleText: 'Dom 17h às 20h', description: 'Áudio, câmera e streaming' },
+    { name: 'louvor', label: 'Ministério de Louvor', icon: 'music', color: '#103B5F', order: 10, groupTag: 'cultos', templateKey: 'louvor', capacity: 32, scheduleText: 'Dom 09h & 18h', highlightText: 'Ensaio geral quarta 20h', description: 'Louvor e adoração', cargos: JSON.stringify(['Vocalista', 'Guitarrista', 'Baixista', 'Baterista', 'Tecladista', 'Violonista']) },
+    { name: 'midia', label: 'Ministério de Mídia', icon: 'video', color: '#16A2AD', order: 11, groupTag: 'cultos', templateKey: 'base', capacity: 20, scheduleText: 'Dom 17h às 20h', description: 'Áudio, câmera e streaming', cargos: JSON.stringify(['Áudio', 'Câmera', 'Streaming', 'Projeção', 'Fotografia']) },
     { name: 'familia', label: 'Ministério de Família', icon: 'home', color: '#059669', order: 12, groupTag: 'pastoral', templateKey: 'base', capacity: 50, scheduleText: 'Qui 19h30', description: 'Casais e famílias' },
     { name: 'missionario', label: 'Ministério Missionário', icon: 'globe', color: '#003C64', order: 13, groupTag: 'pastoral', templateKey: 'base', capacity: 25, scheduleText: 'Sáb 14h', description: 'Missões e evangelismo' },
     { name: 'recepcao', label: 'Ministério de Recepção', icon: 'door-open', color: '#059669', order: 14, groupTag: 'cultos', templateKey: 'base', capacity: 30, scheduleText: 'Dom 08h30 & 17h30', description: 'Portaria e acolhimento' },
@@ -275,10 +257,14 @@ async function main() {
   await prisma.sector.updateMany({ data: { leaderUserId: null, leaderName: null } });
   await prisma.userRole.deleteMany({});
   await prisma.user.deleteMany({});
+  // Remove papéis antigos — o sistema usa apenas admin master, pastor e membro.
+  await prisma.permission.deleteMany({ where: { role: { name: { notIn: ['SUPER_ADMIN', 'PASTOR', 'MEMBRO'] } } } });
+  await prisma.role.deleteMany({ where: { name: { notIn: ['SUPER_ADMIN', 'PASTOR', 'MEMBRO'] } } });
+  await prisma.baptismRecord.deleteMany({});
   await prisma.person.deleteMany({});
 
   const peopleSeed = [
-    { name: 'Pr. Thiago Martins', email: 'pastor@ibscn.org', phone: '(11) 98111-0001', role: 'PASTOR', sector: 'pastoral', pass: hashAdmin, status: 'ACTIVE', baptismDate: '12/03/2010', memberSince: '2010-03-12', pastoralNotes: 'Pastor principal. Acompanha discipulado e formação de líderes.' },
+    { name: 'Admin Master', email: 'admin@nextep.com', phone: null, role: 'SUPER_ADMIN', sector: 'pastoral', pass: hashAdmin, status: 'ACTIVE', baptismDate: null, memberSince: '2026-11-16', pastoralNotes: 'Administrador master. Cria os acessos de pastores, líderes e demais usuários.' },
   ];
 
   const usersBySector = {};
@@ -313,20 +299,21 @@ async function main() {
           email: p.email,
           passwordHash: p.pass,
           status: 'ACTIVE',
+          webAccess: true,
           memberCode: code,
           createdAt: now(),
           updatedAt: now(),
         },
       });
     }
-    if (p.email === 'pastor@ibscn.org') adminUserId = user.id;
+    if (p.email === 'admin@nextep.com') adminUserId = user.id;
     const role = await prisma.role.findUnique({ where: { name: p.role } });
     const existingRole = await prisma.userRole.findFirst({ where: { userId: user.id, roleId: role.id } });
     if (!existingRole) {
       await prisma.userRole.create({ data: { userId: user.id, roleId: role.id, grantedAt: now() } });
     }
-    // Admin master (pastor principal) também é SUPER_ADMIN — pode criar pastores
-    if (p.email === 'pastor@ibscn.org') {
+    // Admin master também é SUPER_ADMIN — pode criar pastores
+    if (p.email === 'admin@nextep.com') {
       const superRole = await prisma.role.findUnique({ where: { name: 'SUPER_ADMIN' } });
       const hasSuper = await prisma.userRole.findFirst({ where: { userId: user.id, roleId: superRole.id } });
       if (!hasSuper) {
@@ -481,6 +468,28 @@ async function main() {
   }
 
   // Visitantes: adicionados manualmente pela interface (seed de demo removido)
+
+  // Etiquetas de eventos e espaços reserváveis
+  await prisma.eventTag.deleteMany({});
+  await prisma.campusSpace.deleteMany({});
+  await prisma.eventTag.createMany({
+    data: [
+      { key: 'CULTO', label: 'Culto', color: '#103B5F', icon: 'church', order: 1 },
+      { key: 'CONFERENCIA', label: 'Conferência', color: '#7C3AED', icon: 'mic-vocal', order: 2 },
+      { key: 'ENSAIO', label: 'Ensaio', color: '#16A2AD', icon: 'music', order: 3 },
+      { key: 'REUNIAO', label: 'Reunião', color: '#D97706', icon: 'users', order: 4 },
+      { key: 'ESCALA', label: 'Escala', color: '#059669', icon: 'clipboard-check', order: 5 },
+      { key: 'RESERVA', label: 'Reserva', color: '#64748B', icon: 'door-open', order: 6 },
+      { key: 'EVENTO', label: 'Evento', color: '#2C7FBF', icon: 'calendar-days', order: 7 },
+    ],
+  });
+  await prisma.campusSpace.createMany({
+    data: [
+      { name: 'Auditório Principal', description: 'Templo principal e cultos de celebração', capacity: 400, color: '#103B5F', icon: 'church', order: 1 },
+      { name: 'Sala Multiuso', description: 'Reuniões, classes e grupos pequenos', capacity: 60, color: '#D97706', icon: 'door-open', order: 2 },
+      { name: 'Estúdio de Gravação', description: 'Gravação, transmissão e mídia', capacity: 12, color: '#16A2AD', icon: 'video', order: 3 },
+    ],
+  });
 
   console.log('Seed completed!');
 }

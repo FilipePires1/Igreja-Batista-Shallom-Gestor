@@ -15,7 +15,6 @@ import {
   Clock,
   Music,
   Calendar,
-  Users,
   Shield,
   HelpCircle,
   LogOut,
@@ -51,12 +50,6 @@ const journeyItems = [
     icon: Clock,
     title: 'Historico de Escalas',
     subtitle: 'Linha do tempo de cultos e eventos servidos',
-    hasArrow: true,
-  },
-  {
-    icon: Users,
-    title: 'Meus Grupos de Conexao (Celula)',
-    subtitle: 'Celula Betel Jovens \u00b7 Ter\u00e7as 20h',
     hasArrow: true,
   },
   {

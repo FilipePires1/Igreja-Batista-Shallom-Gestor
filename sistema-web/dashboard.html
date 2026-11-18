@@ -32,6 +32,9 @@
       <a href="#" class="nav-item" data-section="pessoas" onclick="navigateTo('pessoas',this)">
         <i data-lucide="users"></i><span>Pessoas &amp; Membros</span>
       </a>
+      <a href="#" class="nav-item" data-section="batismos" onclick="navigateTo('batismos',this)">
+        <i data-lucide="droplets"></i><span>Batismos</span>
+      </a>
       <a href="#" class="nav-item" data-section="setores" onclick="navigateTo('setores',this)">
         <i data-lucide="network"></i><span>Setores &amp; Ministérios</span>
       </a>
@@ -40,6 +43,9 @@
       </a>
       <a href="#" class="nav-item" data-section="agenda" onclick="navigateTo('agenda',this)">
         <i data-lucide="calendar-days"></i><span>Agenda &amp; Cultos</span>
+      </a>
+      <a href="#" class="nav-item" data-section="atas" onclick="navigateTo('atas',this)">
+        <i data-lucide="scroll-text"></i><span>Atas &amp; Assembleias</span>
       </a>
       <a href="#" class="nav-item" data-section="avisos" onclick="navigateTo('avisos',this)">
         <i data-lucide="megaphone"></i><span>Avisos &amp; Comunicados</span>
@@ -56,7 +62,7 @@
       </a>
 
       <div class="nav-group-label">Administração &amp; Finanças</div>
-      <a href="#" class="nav-item" data-section="tesouraria" data-roles="pastor,tesoureiro" onclick="navigateTo('tesouraria',this)">
+      <a href="#" class="nav-item" data-section="tesouraria" onclick="navigateTo('tesouraria',this)">
         <i data-lucide="wallet"></i><span>Tesouraria &amp; Dízimos</span>
         <i data-lucide="lock" class="nav-lock"></i>
       </a>
@@ -84,14 +90,6 @@
           </button>
         </div>
       </div>
-    </div>
-
-    <div class="sidebar-dev" title="Desenvolvido por Nextep Solutions">
-      <img src="assets/logo-azul.png" alt="Nextep Solutions">
-      <span class="sidebar-dev-txt">
-        <small>Desenvolvido por</small>
-        <b>Nextep Solutions</b>
-      </span>
     </div>
   </aside>
 
@@ -130,7 +128,7 @@
           </button>
           <div class="dropdown" id="novaAcaoMenu">
             <div class="dropdown-label">Ações rápidas</div>
-            <div class="dropdown-item" data-section="pessoas" onclick="runAction('pessoas',()=>openMemberModal())">
+            <div class="dropdown-item" data-section="pessoas" onclick="openNewMemberPage()">
               <i data-lucide="user-plus"></i> Novo Membro
             </div>
             <div class="dropdown-item" data-section="agenda" onclick="runAction('agenda',()=>openEventModal())">
@@ -145,7 +143,7 @@
             <div class="dropdown-item" data-section="escalas" onclick="runAction('escalas',()=>showToast('Módulo de Escalas em construção','warning'))">
               <i data-lucide="clipboard-plus"></i> Criar Escala
             </div>
-            <div class="dropdown-item" data-section="tesouraria" data-roles="pastor,tesoureiro" onclick="runAction('tesouraria',()=>showToast('Lançamento financeiro em construção','warning'))">
+            <div class="dropdown-item" data-section="tesouraria" onclick="runAction('tesouraria',()=>showToast('Lançamento financeiro em construção','warning'))">
               <i data-lucide="wallet"></i> Lançamento Financeiro
             </div>
           </div>
@@ -413,15 +411,19 @@
             <p class="dash-sub">Controle eclesiástico unificado: acompanhamento de integração, ministérios ativos e histórico pastoral da Igreja Shallom.</p>
           </div>
           <div class="dash-actions">
-            <button class="btn-ghost" onclick="exportPeopleCSV()" title="Baixar CSV dos membros filtrados">
-              <i data-lucide="download"></i> Exportar CSV
+            <button class="btn-ghost" onclick="document.getElementById('peopleImportInput').click()" title="Importar planilha de membros">
+              <i data-lucide="upload"></i> Importar
+            </button>
+            <button class="btn-ghost" onclick="exportPeopleXLSX()" title="Exportar membros para Excel">
+              <i data-lucide="download"></i> Exportar
             </button>
             <button class="btn-ghost" onclick="toggleAdvFilters()" id="advFiltersBtn" title="Filtros avançados de setor e status">
               <i data-lucide="sliders-horizontal"></i> Filtros Avançados
             </button>
-            <button class="btn-primary" onclick="openMemberModal()">
+            <button class="btn-primary" onclick="openNewMemberPage()">
               <i data-lucide="user-plus"></i> Cadastrar Novo Membro
             </button>
+            <input type="file" id="peopleImportInput" accept=".xlsx,.xls,.csv" style="display:none" onchange="importPeopleFile(this)">
           </div>
         </div>
 
@@ -491,7 +493,7 @@
 
         <!-- Toolbar -->
         <div class="people-toolbar">
-          <input type="text" class="search-input ppl-search" placeholder="Buscar por nome, e-mail, ministério, celular..." id="memberSearch" oninput="filterMembers()">
+          <input type="text" class="search-input ppl-search" placeholder="Buscar por nome, e-mail, ministério, telefone..." id="memberSearch" oninput="filterMembers()">
           <select class="filter-select sort-select" id="peopleSort" onchange="setPeopleSort(this.value)" title="Ordenar lista">
             <option value="recentes">Ordenar: Mais Recentes</option>
             <option value="nome">Ordenar: Nome A-Z</option>
@@ -538,7 +540,7 @@
                   <th>Membro / Contato</th>
                   <th>Status</th>
                   <th>Ministérios</th>
-                  <th>Célula</th>
+                  <th>Acesso</th>
                   <th>Assiduidade</th>
                   <th>Ações</th>
                 </tr>
@@ -555,6 +557,154 @@
         </div>
       </section>
 
+      <!-- Cadastro de Membro (página inteira) -->
+      <section class="page-section" id="section-novo-membro">
+        <div class="dash-header">
+          <div class="dash-header-info">
+            <div class="pessoas-eyebrow">
+              <span class="pe-green"><span class="pe-dot"></span> Cadastro Eclesiástico</span>
+              <span class="pe-sep">&middot;</span>
+              <span>Apenas o nome é obrigatório</span>
+            </div>
+            <h1 id="nmTitle">Novo Membro</h1>
+            <p class="dash-sub">Cadastre membros, defina o ministério (opcional) e libere o acesso ao sistema somente para líderes ou pessoas autorizadas.</p>
+          </div>
+          <div class="dash-actions">
+            <button class="btn-ghost" onclick="navigateTo('pessoas')">
+              <i data-lucide="arrow-left"></i> Voltar para Pessoas
+            </button>
+          </div>
+        </div>
+
+        <div class="panel nm-panel">
+          <div class="nm-grid">
+            <div class="form-group nm-full">
+              <label>Nome completo *</label>
+              <input type="text" id="nmName" placeholder="Ex.: João da Silva" autocomplete="off">
+            </div>
+            <div class="form-group">
+              <label>E-mail</label>
+              <input type="email" id="nmEmail" placeholder="email@exemplo.com" autocomplete="off">
+              <span class="nm-hint">Obrigatório apenas se for liberar acesso ao sistema.</span>
+            </div>
+            <div class="form-group">
+              <label>Telefone</label>
+              <input type="tel" id="nmPhone" placeholder="(00) 00000-0000">
+            </div>
+            <div class="form-group">
+              <label>Ministério</label>
+              <select id="nmSector" onchange="updateMemberPositionOptions()">
+                <option value="">Sem ministério — membro comum</option>
+              </select>
+              <span class="nm-hint">Opcional. Sem ministério, a pessoa fica cadastrada apenas como membro comum.</span>
+            </div>
+            <div class="form-group">
+              <label>Cargos no ministério</label>
+              <div class="cargo-select" id="nmCargoSelect">
+                <button type="button" class="cargo-select-btn" onclick="toggleMemberCargoMenu(event)">
+                  <span id="nmCargoLabel">Selecione os cargos</span>
+                  <i data-lucide="chevron-down"></i>
+                </button>
+                <div class="cargo-select-menu" id="nmCargoMenu" style="display:none"></div>
+              </div>
+              <span class="nm-hint">Pode marcar mais de um cargo. As opções são criadas pelo líder do ministério.</span>
+            </div>
+          </div>
+
+          <div class="nm-access-box" id="nmAccessBox">
+            <label class="nm-check">
+              <input type="checkbox" id="nmAccess" onchange="updateMemberAccessUI()">
+              <span>
+                <b>Dar acesso ao sistema web</b>
+                <small>Somente líderes de ministério ou pessoas autorizadas devem ter acesso. O pastor pode liberar e revogar este acesso.</small>
+              </span>
+            </label>
+            <div class="nm-access-fields" id="nmAccessFields" style="display:none">
+              <div class="form-group">
+                <label>Tipo de usuário</label>
+                <select id="nmRole">
+                  <option value="MEMBRO">Membro</option>
+                  <option value="PASTOR">Pastor</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Senha inicial</label>
+                <input type="text" id="nmPassword" value="membro123" autocomplete="off">
+              </div>
+            </div>
+            <div class="nm-access-note" id="nmAccessNote"></div>
+          </div>
+
+          <details class="nm-extra" id="nmMembershipDetails">
+            <summary>
+              <span class="nm-extra-ico"><i data-lucide="file-text"></i></span>
+              <span>
+                <b>Ficha de membresia</b>
+                <small>Dados complementares da solicitação de membresia. Tudo é opcional.</small>
+              </span>
+              <i data-lucide="chevron-down" class="nm-extra-chev"></i>
+            </summary>
+            <div class="nm-extra-body">
+              <div class="nm-extra-section">Dados pessoais</div>
+              <div class="nm-grid">
+                <div class="form-group"><label>Nome da mãe</label><input type="text" id="nmMotherName" autocomplete="off"></div>
+                <div class="form-group"><label>Nome do pai</label><input type="text" id="nmFatherName" autocomplete="off"></div>
+                <div class="form-group"><label>Sexo</label><select id="nmSex"><option value="">Não informado</option><option value="Feminino">Feminino</option><option value="Masculino">Masculino</option></select></div>
+                <div class="form-group"><label>Estado civil</label><select id="nmMaritalStatus"><option value="">Não informado</option><option value="Solteiro(a)">Solteiro(a)</option><option value="Casado(a)">Casado(a)</option><option value="Divorciado(a)">Divorciado(a)</option><option value="Viúvo(a)">Viúvo(a)</option><option value="União estável">União estável</option></select></div>
+                <div class="form-group"><label>Data de nascimento</label><input type="date" id="nmBirthdate"></div>
+                <div class="form-group"><label>CPF</label><input type="text" id="nmCpf" placeholder="000.000.000-00" autocomplete="off"></div>
+                <div class="form-group"><label>RG</label><input type="text" id="nmRg" autocomplete="off"></div>
+                <div class="form-group"><label>Naturalidade</label><input type="text" id="nmBirthplace" autocomplete="off"></div>
+                <div class="form-group"><label>Profissão</label><input type="text" id="nmProfession" autocomplete="off"></div>
+                <div class="form-group"><label>Escolaridade</label><input type="text" id="nmEducation" autocomplete="off"></div>
+              </div>
+
+              <div class="nm-extra-section">Endereço e contato</div>
+              <div class="nm-grid">
+                <div class="form-group nm-full"><label>Endereço</label><input type="text" id="nmAddress" autocomplete="off"></div>
+                <div class="form-group"><label>CEP</label><input type="text" id="nmZipCode" autocomplete="off"></div>
+                <div class="form-group"><label>Bairro</label><input type="text" id="nmNeighborhood" autocomplete="off"></div>
+                <div class="form-group"><label>Cidade</label><input type="text" id="nmCity" autocomplete="off"></div>
+                <div class="form-group"><label>Estado</label><input type="text" id="nmState" maxlength="2" placeholder="MG" autocomplete="off"></div>
+                <div class="form-group"><label>Telefone residencial</label><input type="tel" id="nmResidencePhone" autocomplete="off"></div>
+              </div>
+
+              <div class="nm-extra-section">Família</div>
+              <div class="nm-grid">
+                <div class="form-group"><label>Cônjuge</label><input type="text" id="nmSpouseName" autocomplete="off"></div>
+                <div class="form-group"><label>Já foi casado(a) antes?</label><input type="text" id="nmPreviouslyMarried" placeholder="Sim / Não / observação" autocomplete="off"></div>
+                <div class="form-group"><label>Data do casamento civil</label><input type="date" id="nmCivilMarriageDate"></div>
+                <div class="form-group"><label>Data do casamento religioso</label><input type="date" id="nmReligiousMarriageDate"></div>
+                <div class="form-group nm-full"><label>Filhos (nome e idade)</label><textarea id="nmChildren" rows="2"></textarea></div>
+              </div>
+
+              <div class="nm-extra-section">Igreja e membresia</div>
+              <div class="nm-grid">
+                <div class="form-group"><label>Data da conversão</label><input type="date" id="nmConversionDate"></div>
+                <div class="form-group"><label>Nº da ata de membresia</label><input type="text" id="nmMembershipRecordNumber" autocomplete="off"></div>
+                <div class="form-group"><label>Data do batismo</label><input type="date" id="nmBaptismDate"></div>
+                <div class="form-group"><label>Local do batismo</label><input type="text" id="nmBaptismPlace" autocomplete="off"></div>
+                <div class="form-group nm-full"><label>Igrejas em que já foi membro</label><textarea id="nmPreviousChurches" rows="2"></textarea></div>
+                <div class="form-group"><label>Última igreja</label><input type="text" id="nmLastChurch" autocomplete="off"></div>
+                <div class="form-group"><label>Nome e contato do pastor</label><input type="text" id="nmPreviousPastorContact" autocomplete="off"></div>
+                <div class="form-group nm-full"><label>Endereço da igreja anterior</label><input type="text" id="nmPreviousChurchAddress" autocomplete="off"></div>
+                <div class="form-group nm-full"><label>Trabalha com algum ministério?</label><input type="text" id="nmMinistryInterest" autocomplete="off"></div>
+                <div class="form-group"><label>Entrevistado pelo pastor</label><input type="text" id="nmInterviewedBy" autocomplete="off"></div>
+                <div class="form-group"><label>Data da visita à residência</label><input type="date" id="nmHomeVisitDate"></div>
+                <div class="form-group nm-full"><label>Anotações da membresia</label><textarea id="nmMembershipNotes" rows="2"></textarea></div>
+              </div>
+            </div>
+          </details>
+
+          <div class="nm-footer">
+            <button class="btn-secondary" onclick="navigateTo('pessoas')">Cancelar</button>
+            <button class="btn-primary" onclick="saveMemberPage()">
+              <i data-lucide="save"></i> <span id="nmSaveLabel">Cadastrar membro</span>
+            </button>
+          </div>
+        </div>
+      </section>
+
       <!-- Setores Section -->
       <section class="page-section" id="section-setores">
 
@@ -567,15 +717,11 @@
               <span>Ano Pastoral 2026</span>
             </div>
             <h1>Setores &amp; Ministérios</h1>
-            <p class="dash-sub">Mapa completo dos departamentos da Igreja Shallom: voluntários, cobertura ministerial, prontidão operacional e saúde das lideranças.</p>
+            <p class="dash-sub">Gerencie cada ministério: liderança, cargos, membros ativos, escalas e histórico de alterações.</p>
           </div>
           <div class="dash-actions">
-            <select class="filter-select" id="campusSelect" title="Campus">
-              <option>Campus Principal (Sede)</option>
-              <option>Campus Zona Norte</option>
-            </select>
-            <button class="btn-primary" onclick="manageDept(null)">
-              <i data-lucide="plus"></i> Novo Setor ou Ministério
+            <button class="btn-primary" onclick="openMinistryPage()">
+              <i data-lucide="plus"></i> Novo Ministério
             </button>
           </div>
         </div>
@@ -584,7 +730,7 @@
         <div class="kpi-grid">
           <div class="kpi-card">
             <div class="kpi-top">
-              <span class="kpi-label">Total de Setores Ativos</span>
+              <span class="kpi-label">Ministérios Ativos</span>
               <span class="kpi-icon" style="background:var(--primary-light);color:var(--primary)"><i data-lucide="layout-grid"></i></span>
             </div>
             <div class="kpi-value">
@@ -593,14 +739,14 @@
             </div>
             <div class="kpi-bar"><span id="sKpiTotalBar" style="width:0%"></span></div>
             <div class="kpi-meta">
-              <span>Departamentos cadastrados</span>
+              <span>Ministérios cadastrados</span>
               <span class="kpi-meta-ok" id="sKpiAtivos">&nbsp;</span>
             </div>
           </div>
 
           <div class="kpi-card">
             <div class="kpi-top">
-              <span class="kpi-label">Voluntários Mobilizados</span>
+              <span class="kpi-label">Membros em Ministérios</span>
               <span class="kpi-icon" style="background:var(--secondary-light);color:var(--secondary)"><i data-lucide="hand-heart"></i></span>
             </div>
             <div class="kpi-value">
@@ -608,14 +754,14 @@
               <span class="kpi-delta" id="sKpiVolPct">&nbsp;</span>
             </div>
             <div class="kpi-meta">
-              <span>Do corpo total de 1.260</span>
+              <span>Pessoas vinculadas</span>
               <span id="sKpiVolNovos">&nbsp;</span>
             </div>
           </div>
 
           <div class="kpi-card">
             <div class="kpi-top">
-              <span class="kpi-label">Taxa de Cobertura</span>
+              <span class="kpi-label">Ministérios com Líder</span>
               <span class="kpi-icon" style="background:#ECFDF5;color:#059669"><i data-lucide="shield-check"></i></span>
             </div>
             <div class="kpi-value">
@@ -624,14 +770,14 @@
             </div>
             <div class="kpi-bar"><span id="sKpiCoberturaBar" style="width:0%"></span></div>
             <div class="kpi-meta">
-              <span>Vagas preenchidas nas escalas</span>
+              <span>Cobertura de liderança</span>
               <span id="sKpiCoberturaMeta">&nbsp;</span>
             </div>
           </div>
 
           <div class="kpi-card">
             <div class="kpi-top">
-              <span class="kpi-label">Lideranças Cadastradas</span>
+              <span class="kpi-label">Cargos Cadastrados</span>
               <span class="kpi-icon" style="background:#FEF3C7;color:#D97706"><i data-lucide="crown"></i></span>
             </div>
             <div class="kpi-value">
@@ -639,7 +785,7 @@
               <span class="kpi-delta" id="sKpiLiderPct">&nbsp;</span>
             </div>
             <div class="kpi-meta">
-              <span>Líderes e coordenadores ativos</span>
+              <span>Funções ministeriais</span>
               <span id="sKpiLiderMeta">&nbsp;</span>
             </div>
           </div>
@@ -650,42 +796,488 @@
           <div class="dept-head">
             <div class="dept-head-left">
               <h3>Departamentos Eclesiásticos</h3>
-              <span class="dept-badge" id="deptBadge">12 Principais</span>
-            </div>
-            <div class="dept-tabs" id="deptTabs">
-              <button class="dept-tab active" data-tab="todos" onclick="setDeptTab('todos')">Todos <b id="deptTabTodos">0</b></button>
-              <button class="dept-tab" data-tab="cultos" onclick="setDeptTab('cultos')">Cultos &amp; Liturgia</button>
-              <button class="dept-tab" data-tab="pastoral" onclick="setDeptTab('pastoral')">Pastoral &amp; Cuidado</button>
-              <button class="dept-tab" data-tab="operacoes" onclick="setDeptTab('operacoes')">Operações</button>
+              <span class="dept-badge" id="deptBadge">0 Ministérios</span>
             </div>
           </div>
           <div class="dept-grid" id="deptGrid"></div>
         </div>
 
-        <!-- Atribuição e Saúde -->
+        <!-- Atenção Ministerial -->
         <div class="saude-grid">
           <div class="panel saude-panel">
             <div class="dept-head">
               <div class="dept-head-left">
-                <h3>Atribuição e Saúde Ministerial</h3>
-                <span class="dept-badge dept-badge-blue">Top 5 Prontidão</span>
+                <h3>Ministérios sem Líder</h3>
+                <span class="dept-badge dept-badge-blue" id="semLiderCount">0</span>
               </div>
             </div>
             <div id="saudeList"></div>
-            <div class="saude-foot">
-              <span>Relatório gerado a partir das escalas dos últimos 90 dias.</span>
-              <button class="btn-ghost btn-sm" onclick="showToast('Resumo executivo exportado','success')"><i data-lucide="download"></i> Baixar Resumo Executivo</button>
-            </div>
           </div>
 
           <div class="panel alerta-panel">
             <div class="alerta-head">
-              <span class="alerta-pill" id="alertaCount">3 voluntários em risco de sobrecarga</span>
-              <h3><i data-lucide="triangle-alert"></i> Alerta de SobreCarga Ministerial</h3>
+              <span class="alerta-pill" id="alertaCount">0 ministérios</span>
+              <h3><i data-lucide="triangle-alert"></i> Ministérios sem Membros</h3>
             </div>
             <div id="sobrecargaList"></div>
-            <button class="btn-primary btn-block" onclick="showToast('Abrindo ajuste de escalas...','info')"><i data-lucide="calendar-check"></i> Ajustar Escalas</button>
           </div>
+        </div>
+      </section>
+
+      <!-- Ministerio Section -->
+      <section class="page-section" id="section-ministerio">
+        <div class="dash-header">
+          <div class="dash-header-info">
+            <div class="pessoas-eyebrow">
+              <span class="pe-green"><span class="pe-dot"></span> Gestão Ministerial</span>
+              <span class="pe-sep">&middot;</span>
+              <span id="minEyebrow">Ministério</span>
+            </div>
+            <h1 id="minTitle">Ministério</h1>
+            <p class="dash-sub" id="minSub">Todas as informações do ministério em um só lugar.</p>
+          </div>
+          <div class="dash-actions">
+            <button class="btn-ghost" onclick="navigateTo('setores')">
+              <i data-lucide="arrow-left"></i> Voltar
+            </button>
+            <button class="btn-primary" onclick="saveMinistry()">
+              <i data-lucide="save"></i> <span id="minSaveLabel">Salvar ministério</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="min-grid">
+          <nav class="min-guide" id="minGuide">
+            <div class="min-guide-title">Neste ministério</div>
+            <button class="min-guide-item active" onclick="minGuideGo('minDataBlock', this)"><i data-lucide="building-2"></i> Dados</button>
+            <button class="min-guide-item" onclick="minGuideGo('minLeaderBlock', this)"><i data-lucide="crown"></i> Liderança</button>
+            <button class="min-guide-item" onclick="minGuideGo('minCargosBlock', this)"><i data-lucide="tags"></i> Cargos</button>
+            <button class="min-guide-item" onclick="minGuideGo('minIndicationsBlock', this)"><i data-lucide="clipboard-list"></i> Indicações</button>
+            <button class="min-guide-item" onclick="minGuideGo('minMembersPanel', this)"><i data-lucide="users"></i> Membros</button>
+            <button class="min-guide-item" onclick="minGuideGo('minSchedulesPanel', this)"><i data-lucide="calendar-days"></i> Escalas</button>
+            <button class="min-guide-item" onclick="minGuideGo('minAuditPanel', this)"><i data-lucide="history"></i> Auditoria</button>
+          </nav>
+
+          <div class="panel min-panel min-form-panel">
+            <div class="min-block" id="minDataBlock">
+              <div class="min-block-head">
+                <div class="min-block-title">
+                  <span class="min-block-ico"><i data-lucide="building-2"></i></span>
+                  <div>
+                    <h3>Dados do ministério</h3>
+                    <small>Identidade e informações gerais</small>
+                  </div>
+                </div>
+                <span class="pill" id="minActivePill">Ativo</span>
+              </div>
+              <div class="nm-grid">
+                <div class="form-group nm-full">
+                  <label>Nome do ministério *</label>
+                  <input type="text" id="minLabel" placeholder="Ex.: Ministério de Louvor">
+                  <span class="nm-hint">Nome exibido no sistema, nas escalas e nos relatórios.</span>
+                </div>
+                <div class="form-group nm-full">
+                  <label>Descrição</label>
+                  <textarea id="minDescription" rows="2" placeholder="O que este ministério faz no dia a dia?"></textarea>
+                </div>
+                <div class="form-group">
+                  <label>WhatsApp / grupo</label>
+                  <input type="text" id="minWhatsapp" placeholder="https://chat.whatsapp.com/...">
+                </div>
+                <div class="form-group">
+                  <label>E-mail de contato</label>
+                  <input type="email" id="minContactEmail" placeholder="ministerio@igreja.com">
+                </div>
+                <div class="form-group nm-full">
+                  <label>Observações internas</label>
+                  <textarea id="minNotes" rows="2" placeholder="Anotações da liderança sobre este ministério"></textarea>
+                </div>
+                <div class="form-group nm-full" id="minActiveWrap">
+                  <label class="nm-check" style="margin:0">
+                    <input type="checkbox" id="minActive" checked>
+                    <span>
+                      <b>Ministério ativo</b>
+                      <small>Ministérios inativos deixam de aparecer na listagem e nas escalas.</small>
+                    </span>
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <div class="min-block" id="minLeaderBlock">
+              <div class="min-block-head">
+                <div class="min-block-title">
+                  <span class="min-block-ico leader"><i data-lucide="crown"></i></span>
+                  <div>
+                    <h3>Liderança</h3>
+                    <small>Pode haver mais de um líder no ministério</small>
+                  </div>
+                </div>
+              </div>
+              <div class="form-group" style="margin:0">
+                <label>Líderes do ministério</label>
+                <div class="min-person-field" id="minLeaderField">
+                  <div class="min-chips min-leader-chips" id="minLeaderChips"></div>
+                  <input type="text" id="minLeaderSearch" placeholder="Digite o nome do líder..." autocomplete="off"
+                    oninput="filterMinistryLeaderSuggestions()" onfocus="showMinistryLeaderSuggestions()" onblur="hideMinistryLeaderSuggestions()">
+                  <div class="min-person-suggestions" id="minLeaderSuggestions"></div>
+                </div>
+                <span class="nm-hint">Digite o nome e clique no usuário encontrado para adicionar. Para remover, clique no X do nome.</span>
+              </div>
+            </div>
+
+            <div class="min-block" id="minCargosBlock">
+              <div class="min-block-head">
+                <div class="min-block-title">
+                  <span class="min-block-ico cargos"><i data-lucide="tags"></i></span>
+                  <div>
+                    <h3>Cargos e funções</h3>
+                    <small>Funções que os membros podem exercer neste ministério</small>
+                  </div>
+                </div>
+                <span class="pill pill-gray" id="minCargosCount">0 cargos</span>
+              </div>
+              <div class="min-chips" id="minCargosChips"></div>
+              <div class="min-add-row">
+                <div class="form-group" style="flex:1;margin:0">
+                  <label>Novo cargo</label>
+                  <input type="text" id="minCargoInput" placeholder="Ex.: Guitarrista, Vocalista, Baterista" onkeydown="if(event.key==='Enter'){event.preventDefault();addMinistryCargo();}">
+                </div>
+                <button class="btn-secondary" onclick="addMinistryCargo()">
+                  <i data-lucide="plus"></i> Adicionar cargo
+                </button>
+              </div>
+              <span class="nm-hint">Um membro pode ter vários cargos. As opções abaixo são usadas ao vincular membros e escalas.</span>
+            </div>
+
+            <div class="min-block" id="minIndicationsBlock">
+              <div class="min-block-head">
+                <div class="min-block-title">
+                  <span class="min-block-ico indicacoes"><i data-lucide="clipboard-list"></i></span>
+                  <div>
+                    <h3>Indicações</h3>
+                    <small>Nomes indicados pela liderança e diretoria ministerial</small>
+                  </div>
+                </div>
+                <span class="pill pill-gray" id="minIndicationsCount">0 indicações</span>
+              </div>
+              <div class="min-indication-add">
+                <input type="text" id="minIndicationName" placeholder="Nome indicado" autocomplete="off">
+                <input type="text" id="minIndicationRole" placeholder="Função (Coordenação, Diaconia...)" autocomplete="off">
+                <input type="number" id="minIndicationYear" value="2026" min="2000" max="2100">
+                <button class="btn-secondary" onclick="addMinistryIndication()"><i data-lucide="plus"></i> Indicar</button>
+              </div>
+              <div class="min-indications-list" id="minIndicationsList"></div>
+              <span class="nm-hint">A indicação pode ou não estar vinculada a um membro. Use o vínculo para aproveitar o cadastro existente.</span>
+            </div>
+          </div>
+
+          <aside class="min-side">
+            <div class="panel min-stat-panel">
+              <h3>Resumo do ministério</h3>
+              <div class="min-stats" id="minStats"></div>
+            </div>
+
+            <div class="panel min-stat-panel">
+              <h3>Ações rápidas</h3>
+              <div class="min-quick-actions">
+                <button class="btn-secondary btn-block" onclick="openMinistrySchedules()">
+                  <i data-lucide="calendar-days"></i> Abrir escalas do ministério
+                </button>
+                <button class="btn-secondary btn-block" onclick="navigateTo('pessoas')">
+                  <i data-lucide="users"></i> Ver todos os membros da igreja
+                </button>
+                <button class="btn-danger btn-block" id="minDeleteBtn" onclick="deleteMinistry()">
+                  <i data-lucide="trash-2"></i> Excluir ministério
+                </button>
+              </div>
+            </div>
+
+            <div class="panel min-stat-panel" id="minInfoPanel">
+              <h3>Informações</h3>
+              <div class="min-info-list" id="minInfoList"></div>
+            </div>
+          </aside>
+        </div>
+
+        <div class="panel min-panel" id="minMembersPanel">
+          <div class="min-block-head">
+            <div>
+              <h3>Membros ativos</h3>
+              <small>Pessoas vinculadas a este ministério e seus cargos</small>
+            </div>
+            <span class="pill pill-green" id="minMembersCount">0 membros</span>
+          </div>
+          <div class="min-add-member">
+            <div class="form-group" style="margin:0">
+              <label>Pessoa</label>
+              <div class="min-person-field" id="minPersonField" onclick="handleMinistryPersonFieldClick(event)">
+                <input type="text" id="minAddPersonSearch" placeholder="Digite o nome..." autocomplete="off"
+                  oninput="filterMinistryPeopleSuggestions()" onfocus="showMinistryPeopleSuggestions()" onblur="hideMinistryPeopleSuggestions()">
+                <button type="button" class="min-person-all" onclick="event.stopPropagation();openMinistryPersonPicker()" title="Ver todas as pessoas">
+                  <i data-lucide="users"></i><span>Ver todas</span>
+                </button>
+                <div class="min-person-suggestions" id="minPersonSuggestions"></div>
+              </div>
+            </div>
+            <div class="form-group" style="margin:0">
+              <label>Cargos (pode marcar vários)</label>
+              <details class="min-cargo-picker" id="minAddCargosPicker">
+                <summary id="minAddCargosLabel">Selecionar cargos</summary>
+                <div class="min-cargo-menu" id="minAddCargosMenu"></div>
+              </details>
+            </div>
+            <button class="btn-primary" onclick="addMinistryMember()">
+              <i data-lucide="user-plus"></i> Adicionar
+            </button>
+          </div>
+          <div class="people-table-wrap min-table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Membro</th>
+                  <th>Contato</th>
+                  <th>Cargos no ministério</th>
+                  <th>Acesso</th>
+                  <th>Ações</th>
+                </tr>
+              </thead>
+              <tbody id="minMembersBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="panel min-panel" id="minSchedulesPanel">
+          <div class="min-block-head">
+            <div>
+              <h3>Próximas escalas</h3>
+              <small id="minSchedulesSub">Cultos e eventos deste ministério</small>
+            </div>
+            <button class="btn-ghost btn-sm" onclick="openMinistrySchedules()">
+              <i data-lucide="arrow-up-right"></i> Ver todas
+            </button>
+          </div>
+          <div id="minSchedulesList"></div>
+        </div>
+
+        <div class="panel min-panel" id="minAuditPanel">
+          <div class="min-block-head">
+            <div>
+              <h3>Auditoria do ministério</h3>
+              <small>Histórico de alterações feitas na liderança, cargos e membros</small>
+            </div>
+            <span class="pill pill-gray" id="minAuditCount">0 registros</span>
+          </div>
+          <div class="min-audit" id="minAuditList"></div>
+        </div>
+      </section>
+
+      <!-- Batismos Section -->
+      <section class="page-section" id="section-batismos">
+        <div class="dash-header">
+          <div class="dash-header-info">
+            <div class="pessoas-eyebrow">
+              <span class="pe-green"><span class="pe-dot"></span> Secretaria Eclesiástica</span>
+              <span class="pe-sep">&middot;</span>
+              <span>Fichas de batismo</span>
+            </div>
+            <h1>Batismos</h1>
+            <p class="dash-sub">Registro completo das fichas de batismo da igreja, com vínculo ao cadastro de membros.</p>
+          </div>
+          <div class="dash-actions">
+            <button class="btn-ghost" onclick="document.getElementById('baptismImportInput').click()"><i data-lucide="upload"></i> Importar</button>
+            <button class="btn-ghost" onclick="exportBaptismsXLSX()"><i data-lucide="download"></i> Exportar</button>
+            <button class="btn-primary" onclick="openBaptismForm()"><i data-lucide="plus"></i> Nova ficha de batismo</button>
+            <input type="file" id="baptismImportInput" accept=".xlsx,.xls,.csv" style="display:none" onchange="importBaptismsFile(this)">
+          </div>
+        </div>
+        <div class="kpi-grid batismo-kpis">
+          <div class="kpi-card">
+            <div class="kpi-top"><span class="kpi-label">Fichas cadastradas</span><span class="kpi-icon" style="background:var(--primary-light);color:var(--primary)"><i data-lucide="droplets"></i></span></div>
+            <div class="kpi-value"><span id="baptismKpiTotal">0</span></div>
+            <div class="kpi-meta"><span>Registros no sistema</span></div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-top"><span class="kpi-label">Batizados em 2026</span><span class="kpi-icon" style="background:#ECFDF5;color:#059669"><i data-lucide="calendar-check"></i></span></div>
+            <div class="kpi-value"><span id="baptismKpiYear">0</span></div>
+            <div class="kpi-meta"><span>Fichas do ano atual</span></div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-top"><span class="kpi-label">Vinculados a membros</span><span class="kpi-icon" style="background:var(--secondary-light);color:var(--secondary)"><i data-lucide="link"></i></span></div>
+            <div class="kpi-value"><span id="baptismKpiLinked">0</span></div>
+            <div class="kpi-meta"><span>Com cadastro no sistema</span></div>
+          </div>
+        </div>
+        <div class="panel baptisms-panel">
+          <div class="baptisms-toolbar">
+            <div class="form-group" style="margin:0;max-width:360px;flex:1">
+              <input type="text" id="baptismSearch" placeholder="Buscar por nome, e-mail ou telefone..." oninput="renderBaptisms()">
+            </div>
+            <span class="pill pill-gray" id="baptismCount">0 fichas</span>
+          </div>
+          <div class="people-table-wrap" style="overflow-x:auto">
+            <table class="data-table">
+              <thead><tr><th>Nome</th><th>Batismo</th><th>Contato</th><th>Membro vinculado</th><th>Status</th><th>Ações</th></tr></thead>
+              <tbody id="baptismsTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- Batismo Form Section -->
+      <section class="page-section" id="section-batismo-form">
+        <div class="dash-header">
+          <div class="dash-header-info">
+            <div class="pessoas-eyebrow">
+              <span class="pe-green"><span class="pe-dot"></span> Ficha de Batismo</span>
+              <span class="pe-sep">&middot;</span>
+              <span id="bmEyebrow">Novo registro</span>
+            </div>
+            <h1 id="bmTitle">Nova ficha de batismo</h1>
+            <p class="dash-sub">Preencha os dados do candidato. Os campos são opcionais, exceto o nome.</p>
+          </div>
+          <div class="dash-actions">
+            <button class="btn-ghost" onclick="navigateTo('batismos')"><i data-lucide="arrow-left"></i> Voltar</button>
+            <button class="btn-primary" onclick="saveBaptismForm()"><i data-lucide="save"></i> <span id="bmSaveLabel">Salvar ficha</span></button>
+          </div>
+        </div>
+        <div class="panel nm-panel" style="max-width:1180px">
+          <div class="form-group nm-full">
+            <label>Vincular a um membro cadastrado</label>
+            <select id="bmPerson" onchange="prefillBaptismFromMember(this.value)"><option value="">Sem vínculo / pessoa não cadastrada</option></select>
+            <span class="nm-hint">Ao selecionar, os dados existentes do membro preenchem a ficha.</span>
+          </div>
+          <div class="nm-extra-section">Dados pessoais</div>
+          <div class="nm-grid">
+            <div class="form-group nm-full"><label>Nome completo *</label><input type="text" id="bmName" autocomplete="off"></div>
+            <div class="form-group"><label>Nome da mãe</label><input type="text" id="bmMotherName" autocomplete="off"></div>
+            <div class="form-group"><label>Nome do pai</label><input type="text" id="bmFatherName" autocomplete="off"></div>
+            <div class="form-group"><label>Data de nascimento</label><input type="date" id="bmBirthdate"></div>
+            <div class="form-group"><label>Estado civil</label><input type="text" id="bmMaritalStatus" autocomplete="off"></div>
+            <div class="form-group"><label>CPF</label><input type="text" id="bmCpf" autocomplete="off"></div>
+            <div class="form-group"><label>RG</label><input type="text" id="bmRg" autocomplete="off"></div>
+            <div class="form-group"><label>Naturalidade</label><input type="text" id="bmBirthplace" autocomplete="off"></div>
+            <div class="form-group"><label>Profissão</label><input type="text" id="bmProfession" autocomplete="off"></div>
+            <div class="form-group"><label>Escolaridade</label><input type="text" id="bmEducation" autocomplete="off"></div>
+          </div>
+          <div class="nm-extra-section">Contato e endereço</div>
+          <div class="nm-grid">
+            <div class="form-group"><label>E-mail</label><input type="email" id="bmEmail" autocomplete="off"></div>
+            <div class="form-group"><label>Telefone celular</label><input type="tel" id="bmCellPhone" autocomplete="off"></div>
+            <div class="form-group"><label>Telefone residencial</label><input type="tel" id="bmResidencePhone" autocomplete="off"></div>
+            <div class="form-group"><label>CEP</label><input type="text" id="bmZipCode" autocomplete="off"></div>
+            <div class="form-group nm-full"><label>Endereço</label><input type="text" id="bmAddress" autocomplete="off"></div>
+            <div class="form-group"><label>Bairro</label><input type="text" id="bmNeighborhood" autocomplete="off"></div>
+            <div class="form-group"><label>Cidade</label><input type="text" id="bmCity" autocomplete="off"></div>
+            <div class="form-group"><label>Estado</label><input type="text" id="bmState" maxlength="2" autocomplete="off"></div>
+          </div>
+          <div class="nm-extra-section">Conversão e batismo</div>
+          <div class="nm-grid">
+            <div class="form-group"><label>Data da conversão</label><input type="date" id="bmConversionDate"></div>
+            <div class="form-group"><label>Data do batismo</label><input type="date" id="bmBaptismDate"></div>
+          </div>
+          <div class="nm-extra-section">Família</div>
+          <div class="nm-grid">
+            <div class="form-group"><label>Cônjuge</label><input type="text" id="bmSpouseName" autocomplete="off"></div>
+            <div class="form-group"><label>Já foi casado(a) antes?</label><input type="text" id="bmPreviouslyMarried" autocomplete="off"></div>
+            <div class="form-group"><label>Data do casamento civil</label><input type="date" id="bmCivilMarriageDate"></div>
+            <div class="form-group"><label>Data do casamento religioso</label><input type="date" id="bmReligiousMarriageDate"></div>
+            <div class="form-group nm-full"><label>Filhos (nome e idade)</label><textarea id="bmChildren" rows="2"></textarea></div>
+          </div>
+          <div class="nm-extra-section">Anotações</div>
+          <div class="nm-grid">
+            <div class="form-group nm-full"><label>Anotações</label><textarea id="bmNotes" rows="3"></textarea></div>
+            <div class="form-group nm-full"><label>Assinatura do candidato</label><input type="text" id="bmSignature" autocomplete="off"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Atas Section -->
+      <section class="page-section" id="section-atas">
+        <div class="dash-header">
+          <div class="dash-header-info">
+            <div class="pessoas-eyebrow">
+              <span class="pe-green"><span class="pe-dot"></span> Secretaria &amp; Governança</span>
+              <span class="pe-sep">&middot;</span>
+              <span>Livro de atas</span>
+            </div>
+            <h1>Atas &amp; Assembleias</h1>
+            <p class="dash-sub">Registro das assembleias gerais, reuniões de diretoria e decisões da igreja.</p>
+          </div>
+          <div class="dash-actions">
+            <button class="btn-ghost" onclick="document.getElementById('minutesImportInput').click()"><i data-lucide="upload"></i> Importar</button>
+            <button class="btn-ghost" onclick="exportMinutesXLSX()"><i data-lucide="download"></i> Exportar</button>
+            <button class="btn-primary" onclick="openMinuteForm()"><i data-lucide="plus"></i> Nova ata</button>
+            <input type="file" id="minutesImportInput" accept=".xlsx,.xls,.csv" style="display:none" onchange="importMinutesFile(this)">
+          </div>
+        </div>
+        <div class="panel minutes-panel">
+          <div class="minutes-toolbar">
+            <div class="form-group" style="margin:0;max-width:360px;flex:1">
+              <input type="text" id="minutesSearch" placeholder="Buscar por número, título ou assunto..." oninput="renderMinutes()">
+            </div>
+            <span class="pill pill-gray" id="minutesCount">0 atas</span>
+          </div>
+          <div id="minutesList"></div>
+        </div>
+      </section>
+
+      <!-- Ata Form Section -->
+      <section class="page-section" id="section-ata-form">
+        <div class="dash-header">
+          <div class="dash-header-info">
+            <div class="pessoas-eyebrow">
+              <span class="pe-green"><span class="pe-dot"></span> Livro de Atas</span>
+              <span class="pe-sep">&middot;</span>
+              <span id="ataEyebrow">Novo registro</span>
+            </div>
+            <h1 id="ataTitle">Nova ata</h1>
+            <p class="dash-sub">Registre a assembleia e o texto integral da ata.</p>
+          </div>
+          <div class="dash-actions">
+            <button class="btn-ghost" onclick="navigateTo('atas')"><i data-lucide="arrow-left"></i> Voltar</button>
+            <button class="btn-primary" onclick="saveMinuteForm()"><i data-lucide="save"></i> <span id="ataSaveLabel">Salvar ata</span></button>
+          </div>
+        </div>
+        <div class="panel nm-panel" style="max-width:1180px">
+          <div class="nm-grid">
+            <div class="form-group"><label>Número da ata *</label><input type="text" id="ataNumber" placeholder="Ex.: 044" autocomplete="off"></div>
+            <div class="form-group"><label>Tipo</label><select id="ataType"><option value="AGO">Assembleia Geral Ordinária</option><option value="AGE">Assembleia Geral Extraordinária</option><option value="DIRETORIA">Reunião de Diretoria</option><option value="CONSELHO">Reunião de Conselho</option><option value="OUTRA">Outra</option></select></div>
+            <div class="form-group nm-full"><label>Título *</label><input type="text" id="ataMeetingTitle" placeholder="Ex.: Eleição da Diretoria Estatutária" autocomplete="off"></div>
+            <div class="form-group"><label>Data *</label><input type="date" id="ataDate"></div>
+            <div class="form-group"><label>Horário</label><input type="time" id="ataTime"></div>
+            <div class="form-group nm-full"><label>Local</label><input type="text" id="ataLocation" autocomplete="off"></div>
+            <div class="form-group"><label>Presidente</label><input type="text" id="ataPresident" autocomplete="off"></div>
+            <div class="form-group"><label>Secretário(a)</label><input type="text" id="ataSecretary" autocomplete="off"></div>
+            <div class="form-group"><label>Nº de presentes</label><input type="number" id="ataAttendees" min="0"></div>
+            <div class="form-group"><label>Status</label><select id="ataStatus"><option value="DRAFT">Rascunho</option><option value="APPROVED">Aprovada</option><option value="CANCELED">Cancelada</option></select></div>
+            <div class="form-group nm-full"><label>Ordem do dia</label><textarea id="ataAgenda" rows="3"></textarea></div>
+            <div class="form-group nm-full"><label>Texto da ata *</label><textarea id="ataBody" rows="10" placeholder="Texto integral da ata..."></textarea></div>
+            <div class="form-group nm-full"><label>Decisões e deliberações</label><textarea id="ataDecisions" rows="3"></textarea></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Ata View Section -->
+      <section class="page-section" id="section-ata-view">
+        <div class="dash-header">
+          <div class="dash-header-info">
+            <div class="pessoas-eyebrow">
+              <span class="pe-green"><span class="pe-dot"></span> Livro de Atas</span>
+              <span class="pe-sep">&middot;</span>
+              <span id="ataViewEyebrow">Ata</span>
+            </div>
+            <h1 id="ataViewTitle">Ata</h1>
+            <p class="dash-sub" id="ataViewSub"></p>
+          </div>
+          <div class="dash-actions">
+            <button class="btn-ghost" onclick="navigateTo('atas')"><i data-lucide="arrow-left"></i> Voltar</button>
+            <button class="btn-ghost" onclick="printMinute(ataViewId)"><i data-lucide="printer"></i> Imprimir</button>
+            <button class="btn-primary" onclick="openMinuteForm(ataViewId)"><i data-lucide="pencil"></i> Editar ata</button>
+          </div>
+        </div>
+        <div class="panel ata-view-panel">
+          <div id="ataViewContent"></div>
         </div>
       </section>
 
@@ -696,26 +1288,66 @@
 
       <!-- Agenda Section -->
       <section class="page-section" id="section-agenda">
-        <div class="section-header">
-          <h2>Agenda &amp; Cultos</h2>
-          <button class="btn-primary" onclick="openEventModal()">
-            <span class="material-symbols-outlined">add</span> Novo Evento
-          </button>
+        <div class="dash-header agenda-head">
+          <div class="dash-header-info">
+            <div class="pessoas-eyebrow">
+              <span class="pe-green"><span class="pe-dot"></span> Módulo de Liturgia &amp; Espaços</span>
+              <span class="pe-sep">&middot;</span>
+              <span>Programação da igreja</span>
+            </div>
+            <h1>Agenda Geral &amp; Gestão de Cultos</h1>
+            <p class="dash-sub">Celebrações, ensaios, conferências e reservas de espaços em um só calendário.</p>
+          </div>
+          <div class="dash-actions">
+            <button class="btn-ghost" onclick="exportAgendaICS()">
+              <i data-lucide="calendar-plus"></i> Google Agenda
+            </button>
+            <div class="dropdown-anchor">
+              <button class="btn-ghost" onclick="toggleAgendaSpaceMenu(event)">
+                <i data-lucide="map-pin"></i> <span id="agendaSpaceLabel">Filtrar Espaço</span>
+                <i data-lucide="chevron-down" style="width:14px;height:14px"></i>
+              </button>
+              <div class="dropdown" id="agendaSpaceMenu"></div>
+            </div>
+            <button class="btn-primary" onclick="openEventModal()">
+              <i data-lucide="calendar-plus"></i> Novo Evento ou Culto
+            </button>
+          </div>
         </div>
-        <div class="table-container">
-          <table class="data-table" id="eventsTable">
-            <thead>
-              <tr>
-                <th>Nome</th>
-                <th>Data</th>
-                <th>Horario</th>
-                <th>Local</th>
-                <th>Status</th>
-                <th>Acoes</th>
-              </tr>
-            </thead>
-            <tbody id="eventsTableBody"></tbody>
-          </table>
+
+        <div class="agenda-layout">
+          <div class="agenda-main">
+            <div class="panel agenda-calendar-panel">
+              <div class="agenda-cal-toolbar">
+                <div class="agenda-month-nav">
+                  <div class="agenda-month-group">
+                    <button class="btn-icon agenda-nav-btn" onclick="agendaNavigate(-1)" title="Anterior"><i data-lucide="chevron-left"></i></button>
+                    <div class="agenda-month-copy">
+                      <strong id="agendaMonthLabel">Novembro 2026</strong>
+                    </div>
+                    <button class="btn-icon agenda-nav-btn" onclick="agendaNavigate(1)" title="Próximo"><i data-lucide="chevron-right"></i></button>
+                  </div>
+                  <button class="btn-ghost agenda-today-btn" onclick="agendaGoToday()">Hoje</button>
+                </div>
+                <div class="agenda-view-switch" id="agendaViewSwitch">
+                  <button data-view="month" onclick="setAgendaView('month')">Mês</button>
+                  <button data-view="week" onclick="setAgendaView('week')">Semana</button>
+                  <button data-view="day" onclick="setAgendaView('day')">Dia</button>
+                  <button data-view="list" onclick="setAgendaView('list')">Lista</button>
+                </div>
+              </div>
+              <div class="agenda-summary" id="agendaSummary"></div>
+              <div class="agenda-cal-scroll">
+                <div id="agendaCalendarBody"></div>
+              </div>
+              <div class="agenda-legend" id="agendaLegend"></div>
+            </div>
+          </div>
+
+          <aside class="agenda-side">
+            <div class="panel agenda-side-panel" id="agendaNextPanel"></div>
+            <div class="panel agenda-side-panel" id="agendaSpacesPanel"></div>
+          </aside>
         </div>
       </section>
 
@@ -919,10 +1551,28 @@
     </div>
   </div>
 
+  <!-- Confirmacao (substitui o confirm do navegador) -->
+  <div class="confirm-overlay" id="confirmOverlay" onclick="if(event.target===this) closeConfirm()">
+    <div class="confirm-card" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+      <div class="confirm-head">
+        <span class="confirm-ico danger" id="confirmIcon"><span class="material-symbols-outlined">warning</span></span>
+        <div class="confirm-copy">
+          <h3 id="confirmTitle">Confirmar ação</h3>
+          <p id="confirmMessage"></p>
+        </div>
+      </div>
+      <div class="confirm-actions">
+        <button type="button" class="btn-secondary" onclick="resolveConfirm(false)">Cancelar</button>
+        <button type="button" class="btn-danger" id="confirmOkBtn" onclick="resolveConfirm(true)">Confirmar</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Toast -->
   <div class="toast-container" id="toastContainer"></div>
 
   <script src="js/lucide.min.js"></script>
+  <script src="js/xlsx.full.min.js"></script>
   <script src="js/api.js"></script>
   <script src="js/app.js"></script>
 </body>

@@ -2,9 +2,7 @@
 // Hidrata os mocks com dados reais quando a API está disponível.
 // Se a API estiver offline, os mocks originais continuam valendo.
 
-const API_BASES = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
-  ? ['http://localhost:3000/api', '/api']
-  : ['/api'];
+const API_BASES = ['/api'];
 
 let API_BASE = null;
 
@@ -25,6 +23,7 @@ async function apiGet(path) {
 }
 
 async function apiPost(path, body) {
+  let lastErr;
   for (const base of API_BASES) {
     try {
       const ctrl = new AbortController();
@@ -36,27 +35,62 @@ async function apiPost(path, body) {
         signal: ctrl.signal,
       });
       clearTimeout(timer);
-      if (!r.ok) continue;
+      if (!r.ok) {
+        let msg = '';
+        try {
+          const data = await r.json();
+          msg = Array.isArray(data.message) ? data.message.join(' ') : data.message;
+        } catch (e) { /* sem corpo JSON */ }
+        // Erros de validação/permissão são respostas definitivas da API.
+        if ([400, 401, 403, 404, 409, 422].includes(r.status)) {
+          const err = new Error(msg || 'Não foi possível concluir a operação');
+          err.isApiError = true;
+          throw err;
+        }
+        lastErr = new Error(msg || `Erro ${r.status}`);
+        continue;
+      }
       API_BASE = base;
       return await r.json();
-    } catch (e) { /* tenta próximo base */ }
+    } catch (e) {
+      if (e && e.isApiError) throw e;
+      lastErr = e;
+    }
   }
-  throw new Error('API offline');
+  throw lastErr || new Error('API offline');
 }
 
 function apiOnline() { return !!API_BASE; }
 
 function sectorLabel(name) {
-  const map = { louvor: 'Louvor', midia: 'Midia', portaria: 'Recepcao', infantil: 'Infantil', intercessao: 'Intercessao', cantina: 'Cantina', acao_social: 'Acao Social', jovens: 'Jovens', tesouraria: 'Tesouraria', diaconato: 'Diaconato', celulas: 'Celulas', eventos: 'Eventos', pastoral: 'Pastoral', comunicacao: 'Comunicacao' };
+  const map = { louvor: 'Louvor', midia: 'Midia', portaria: 'Recepcao', recepcao: 'Recepcao', infantil: 'Infantil', intercessao: 'Intercessao', cantina: 'Cantina', acao_social: 'Acao Social', jovens: 'Jovens', tesouraria: 'Tesouraria', diaconato: 'Diaconato', eventos: 'Eventos', pastoral: 'Pastoral', comunicacao: 'Comunicacao' };
   return map[name] || name || 'Sem Setor';
+}
+
+function parseJsonList(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) return value.filter(Boolean);
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed)) return parsed.filter(Boolean);
+  } catch (e) { /* lista simples separada por vírgula */ }
+  return String(value).split(',').map(v => v.trim()).filter(Boolean);
 }
 
 function personToMember(p) {
   const sm = (p.sectorMembers || [])[0];
-  const roleLabel = sm?.role?.label || 'Membro';
+  const userRoleNames = (p.user?.roles || []).map(r => r.role?.name).filter(Boolean);
+  const isPastor = userRoleNames.includes('PASTOR');
+  const isAdminMaster = userRoleNames.includes('SUPER_ADMIN');
+  const isLeader = !!p.user && ((p.user.ledSectors || []).length > 0 || (p.user.leaderLinks || []).length > 0);
+  const webAccess = !!p.user && (!!p.user.webAccess || isPastor || isAdminMaster || isLeader);
+  const positions = parseJsonList(sm?.positions || sm?.position);
+  const roleLabel = isAdminMaster ? 'Admin Master'
+    : isPastor ? 'Pastor'
+      : (sm?.role?.label || 'Membro');
   const sectorNm = sm?.sector?.name || '';
   const isActive = p.status === 'ACTIVE';
-  const roleMap = { 'Lider': 'Lider', 'Pastor': 'Pastor', 'Coordenador': 'Coordenador', 'Presbitero': 'Presbitero', 'Membro': 'Membro' };
+  const roleMap = { 'Admin Master': 'Admin Master', 'Pastor': 'Pastor', 'Membro': 'Membro' };
   const gender = /a$|ia$|ela$|ana$|santos$|ferreira$|duarte$|silva$|souza$|ribeiro$|alves$/i.test(p.name) ? 'f' : 'm';
   return {
     id: p.id,
@@ -64,33 +98,73 @@ function personToMember(p) {
     email: p.email || '—',
     phone: p.phone || '—',
     sector: sectorLabel(sectorNm),
+    sectorKey: sectorNm,
+    position: positions.join(', '),
+    positions,
     role: roleMap[roleLabel] || roleLabel,
     status: isActive ? 'ativo' : 'inativo',
     gender,
     voluntario: !!sm,
-    lider: ['Lider', 'Pastor', 'Coordenador', 'Presbitero'].includes(roleLabel),
-    pastoral: roleLabel === 'Pastor',
-    login: !!p.user && p.user.status === 'ACTIVE',
+    lider: isPastor || isLeader,
+    pastoral: isPastor,
+    hasUser: !!p.user,
+    webAccess,
+    login: webAccess,
     joined: (p.memberSince || p.createdAt || '').slice(0, 10),
-    tags: sm ? [sm.sector?.label || sectorLabel(sectorNm), roleLabel] : ['Sem Setor'],
-    cell: null,
-    attendance: isActive ? 85 : 40,
+    tags: sm ? [sm.sector?.label || sectorLabel(sectorNm), ...(positions.length ? positions : ['Membro'])] : ['Sem ministério'],
+    attendance: 0,
     baptism: p.baptismDate || '—',
     churchTime: '',
     note: p.pastoralNotes || '',
     _apiId: p.id,
+    birthdate: p.birthdate || '',
+    motherName: p.motherName || '',
+    fatherName: p.fatherName || '',
+    sex: p.sex || '',
+    maritalStatus: p.maritalStatus || '',
+    rg: p.rg || '',
+    birthplace: p.birthplace || '',
+    profession: p.profession || '',
+    education: p.education || '',
+    address: p.address || '',
+    city: p.city || '',
+    state: p.state || '',
+    zipCode: p.zipCode || '',
+    neighborhood: p.neighborhood || '',
+    residencePhone: p.residencePhone || '',
+    conversionDate: p.conversionDate || '',
+    spouseName: p.spouseName || '',
+    previouslyMarried: p.previouslyMarried || '',
+    civilMarriageDate: p.civilMarriageDate || '',
+    religiousMarriageDate: p.religiousMarriageDate || '',
+    children: p.children || '',
+    previousChurches: p.previousChurches || '',
+    lastChurch: p.lastChurch || '',
+    previousPastorContact: p.previousPastorContact || '',
+    previousChurchAddress: p.previousChurchAddress || '',
+    ministryInterest: p.ministryInterest || '',
+    interviewedBy: p.interviewedBy || '',
+    homeVisitDate: p.homeVisitDate || '',
+    membershipNotes: p.membershipNotes || '',
+    membershipRecordNumber: p.membershipRecordNumber || '',
+    baptismPlace: p.baptismPlace || '',
+    cpf: p.cpf || '',
   };
 }
 
 async function hydrateFromApi() {
   try {
-    const [people, events, schedules, anns, orders] = await Promise.all([
+    const [people, events, schedules, anns, orders, tags, spaces] = await Promise.all([
       apiGet('/people'),
       apiGet('/events'),
       apiGet('/schedules'),
       apiGet('/announcements'),
       apiGet('/canteen/orders'),
+      apiGet('/event-tags'),
+      apiGet('/spaces'),
     ]);
+    window.apiEventTags = Array.isArray(tags) ? tags : [];
+    window.apiSpaces = Array.isArray(spaces) ? spaces : [];
 
     // Pessoas → mockMembers (muta in-place, preserva referências; sempre sincroniza)
     const members = people.filter(p => p.status !== 'VISITOR').map(personToMember);
@@ -127,22 +201,37 @@ async function hydrateFromApi() {
       });
     });
 
-    // Eventos → mockEvents
-    if (events.length) {
-      mockEvents.length = 0;
-      events.forEach((e, i) => {
-        mockEvents.push({
-          id: i + 1,
-          name: e.title,
-          date: (e.date || '').slice(0, 10),
-          time: e.timeStart || '19:00',
-          location: e.location || 'Templo Principal',
-          status: (e.date && e.date < new Date().toISOString().slice(0, 10)) ? 'past' : 'upcoming',
-        });
+    // Eventos → mockEvents / window.apiEvents
+    window.apiEvents = events;
+    mockEvents.length = 0;
+    events.forEach((e) => {
+      const iso = (e.date || '').slice(0, 10);
+      const isPast = iso && iso < new Date().toISOString().slice(0, 10);
+      mockEvents.push({
+        id: e.id,
+        _apiId: e.id,
+        name: e.title,
+        date: iso,
+        time: e.timeStart || '19:00',
+        timeEnd: e.timeEnd || '',
+        location: e.location || 'Templo Principal',
+        status: isPast ? 'past' : 'upcoming',
+        apiStatus: e.status || 'SCHEDULED',
+        type: e.type || 'EVENTO',
+        subtype: e.subtype || '',
+        description: e.description || '',
+        isPublic: !!e.isPublic,
+        capacity: e.capacity || null,
+        liveUrl: e.liveUrl || '',
+        sectorId: e.sectorId || null,
+        sectorLabel: (e.sector && e.sector.label) || '',
+        rsvps: (e._count && e._count.rsvps) || 0,
+        schedulesCount: (e._count && e._count.schedules) || 0,
       });
-    }
+    });
 
     // Escalas → mockShifts (agrupa por setor, próximo culto)
+    window.apiSchedules = schedules;
     if (schedules.length) {
       const nextDate = schedules.filter(s => s.date >= new Date().toISOString().slice(0, 10))[0]?.date;
       const nextSchedules = schedules.filter(s => s.date === nextDate);
@@ -202,6 +291,22 @@ async function hydrateFromApi() {
     try {
       const sectors = await apiGet('/sectors');
       if (sectors && sectors.length) {
+        sectors.forEach((s) => {
+          s.cargosList = parseJsonList(s.cargos);
+          (s.members || []).forEach((m) => {
+            m.positionsList = parseJsonList(m.positions || m.position);
+          });
+          const links = (s.leaderLinks || []).map(l => l.user).filter(Boolean);
+          if (!links.length && s.leader) links.push(s.leader);
+          s.leaders = links.map(u => ({
+            id: u.id,
+            name: (u.person && u.person.name) || u.email,
+            email: u.email,
+          }));
+          s.leaderUserIds = s.leaders.map(l => l.id);
+          s.leaderNames = s.leaders.map(l => l.name);
+          s.leaderDisplay = s.leaderNames.join(' & ') || s.leaderName || '';
+        });
         window.apiSectors = sectors; // brutos: leaderUserId, members, templateKey (escopo de líder)
         mockDepartments.length = 0;
         sectors.forEach((s) => {
@@ -209,17 +314,32 @@ async function hydrateFromApi() {
             id: s.id,
             name: s.label,
             icon: s.icon || 'building-2',
+            color: s.color || '#103B5F',
             group: s.groupTag || 'operacoes',
             sub: s.description || '',
-            leader: s.leaderName || '—',
-            volunteers: s._count ? s._count.members : 0,
-            capacity: s.capacity || 0,
-            schedule: s.scheduleText || '—',
-            highlight: s.highlightText || '—',
-            readiness: s.readiness ?? 100,
-            status: (s.readiness ?? 100) >= 90 ? 'Pronto' : (s.readiness ?? 100) >= 70 ? 'Atenção' : 'Crítico',
-            tone: (s.readiness ?? 100) >= 90 ? 'green' : (s.readiness ?? 100) >= 70 ? 'orange' : 'red',
+            description: s.description || '',
+            leader: s.leaderDisplay || '—',
+            leaderUserId: s.leaderUserIds[0] || s.leaderUserId || null,
+            leaderUserIds: s.leaderUserIds || [],
+            leaders: s.leaders || [],
+            leaderEmail: (s.leaders[0] && s.leaders[0].email) || '',
+            volunteers: (s.members || []).length,
+            capacity: 0,
+            schedule: '',
+            highlight: s.highlightText || '',
+            readiness: 0,
+            status: '',
+            tone: '',
             live: !!s.isLive,
+            cargos: s.cargosList || [],
+            mission: s.mission || '',
+            vision: s.vision || '',
+            foundedAt: s.foundedAt || '',
+            notes: s.notes || '',
+            whatsappLink: s.whatsappLink || '',
+            contactEmail: s.contactEmail || '',
+            members: s.members || [],
+            schedulesCount: s._count ? s._count.schedules : 0,
             _apiId: s.id,
             _active: s.isActive !== false,
           });
