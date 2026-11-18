@@ -315,6 +315,7 @@ function initSidebar() {
 }
 
 function logout() {
+  fetch('/api/auth/logout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).catch(() => {});
   localStorage.removeItem('loggedIn');
   localStorage.removeItem('adminUser');
   window.location.href = 'index.html';
