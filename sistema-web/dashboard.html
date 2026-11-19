@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Igreja Shallom - Admin Workspace</title>
+  <link rel="icon" type="image/png" href="assets/logo-azul.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&display=swap" rel="stylesheet">
@@ -716,11 +717,11 @@
               <span class="pe-sep">&middot;</span>
               <span>Ano Pastoral 2026</span>
             </div>
-            <h1>Setores &amp; Ministérios</h1>
-            <p class="dash-sub">Gerencie cada ministério: liderança, cargos, membros ativos, escalas e histórico de alterações.</p>
+            <h1 id="setoresTitle">Setores &amp; Ministérios</h1>
+            <p class="dash-sub" id="setoresSub">Gerencie cada ministério: liderança, cargos, membros ativos, escalas e histórico de alterações.</p>
           </div>
           <div class="dash-actions">
-            <button class="btn-primary" onclick="openMinistryPage()">
+            <button class="btn-primary" id="newMinistryBtn" onclick="openMinistryPage()">
               <i data-lucide="plus"></i> Novo Ministério
             </button>
           </div>

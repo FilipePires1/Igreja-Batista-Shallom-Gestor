@@ -14,6 +14,8 @@ import {
 import { PrismaService } from './prisma.service';
 import * as bcrypt from 'bcryptjs';
 import { COOKIE_NAME, TTL_SECONDS, signSession } from './auth';
+import * as crypto from 'crypto';
+import * as nodemailer from 'nodemailer';
 
 const now = () => new Date().toISOString();
 
@@ -89,6 +91,38 @@ export class DataController {
     if (admin) return admin.id;
     const first = await this.prisma.user.findFirst({ select: { id: true }, orderBy: { createdAt: 'asc' } });
     return first?.id || null;
+  }
+
+  private smtpTransport() {
+    const host = process.env.SMTP_HOST;
+    const user = process.env.SMTP_USER;
+    const pass = process.env.SMTP_PASS;
+    if (!host || !user || !pass) return null;
+    return nodemailer.createTransport({
+      host,
+      port: parseInt(process.env.SMTP_PORT || '465', 10),
+      secure: String(process.env.SMTP_SECURE || 'true') !== 'false',
+      auth: { user, pass },
+    });
+  }
+
+  private resetEmailHtml(name: string, resetUrl: string) {
+    const safeName = String(name || 'irmão(ã)').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    return `
+      <div style="font-family:Arial,sans-serif;background:#F1F5F9;padding:28px">
+        <div style="max-width:520px;margin:0 auto;background:#fff;border-radius:14px;padding:30px;border:1px solid #E8EDF3">
+          <h2 style="margin:0 0 6px;font-size:20px;color:#103B5F">Igreja Shallom</h2>
+          <p style="margin:0 0 20px;font-size:12px;color:#777587">Recuperação de senha do painel administrativo</p>
+          <p style="font-size:14px;color:#141B2B;line-height:1.6">Olá, ${safeName}!</p>
+          <p style="font-size:14px;color:#464555;line-height:1.6">Recebemos uma solicitação para redefinir sua senha. Clique no botão abaixo para criar uma nova senha. O link expira em 1 hora.</p>
+          <p style="text-align:center;margin:26px 0">
+            <a href="${resetUrl}" style="display:inline-block;background:#103B5F;color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;font-size:14px;font-weight:bold">Redefinir minha senha</a>
+          </p>
+          <p style="font-size:12px;color:#777587;line-height:1.5">Se você não solicitou, ignore este e-mail. Sua senha atual continua válida.</p>
+          <hr style="border:none;border-top:1px solid #E8EDF3;margin:22px 0">
+          <p style="font-size:11px;color:#94A3B8;margin:0">Igreja Batista Nacional Shallom Cidade Nobre · Nextep Solutions</p>
+        </div>
+      </div>`;
   }
 
   private async writeMinistryAudit(actorId: string | undefined, action: string, sectorId: string, detail: any) {
@@ -231,6 +265,76 @@ export class DataController {
         roles: user.roles.map((r) => ({ name: r.role.name, label: r.role.label, level: r.role.level })),
       },
     };
+  }
+
+  // ===== RECUPERAÇÃO DE SENHA =====
+  @Post('auth/forgot-password')
+  async forgotPassword(@Body() body: any) {
+    const email = String(body.email || '').trim().toLowerCase();
+    if (!email) throw new BadRequestException('Informe seu e-mail');
+    const generic: any = { ok: true, message: 'Se este e-mail estiver cadastrado, enviaremos as instruções de recuperação.' };
+    const user = await this.prisma.user.findUnique({ where: { email }, include: { person: true } });
+    if (!user) return generic;
+    const token = crypto.randomBytes(32).toString('hex');
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { resetTokenHash: tokenHash, resetTokenExpiresAt: expiresAt, updatedAt: now() },
+    });
+    const base = String(body.baseUrl || process.env.PUBLIC_APP_URL || 'http://localhost:8080').replace(/\/+$/, '');
+    const resetUrl = `${base}/reset.html?token=${token}`;
+    const transporter = this.smtpTransport();
+    let sent = false;
+    if (transporter) {
+      try {
+        await transporter.sendMail({
+          from: process.env.SMTP_FROM || `Igreja Shallom <${process.env.SMTP_USER}>`,
+          to: user.email,
+          subject: 'Redefinição de senha — Igreja Shallom',
+          html: this.resetEmailHtml(user.person?.name || user.email, resetUrl),
+        });
+        sent = true;
+      } catch (e) {
+        console.error('[auth] Falha ao enviar e-mail de recuperação:', e?.message || e);
+      }
+    }
+    if (!sent) {
+      console.log(`[auth] Link de recuperação para ${user.email}: ${resetUrl}`);
+      if (process.env.NODE_ENV !== 'production') generic.devResetUrl = resetUrl;
+    }
+    return generic;
+  }
+
+  @Post('auth/validate-reset-token')
+  async validateResetToken(@Body() body: any) {
+    const token = String(body.token || '').trim();
+    if (!token) return { valid: false };
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const user = await this.prisma.user.findFirst({
+      where: { resetTokenHash: tokenHash },
+      select: { id: true, resetTokenExpiresAt: true },
+    });
+    return { valid: !!user && !!user.resetTokenExpiresAt && new Date(user.resetTokenExpiresAt).getTime() > Date.now() };
+  }
+
+  @Post('auth/reset-password')
+  async resetPassword(@Body() body: any) {
+    const token = String(body.token || '').trim();
+    const password = String(body.password || '');
+    if (!token) throw new BadRequestException('Token inválido');
+    if (password.length < 6) throw new BadRequestException('A senha deve ter pelo menos 6 caracteres');
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const user = await this.prisma.user.findFirst({ where: { resetTokenHash: tokenHash } });
+    if (!user || !user.resetTokenExpiresAt || new Date(user.resetTokenExpiresAt).getTime() <= Date.now()) {
+      throw new BadRequestException('Link de recuperação inválido ou expirado');
+    }
+    const hash = bcrypt.hashSync(password, 10);
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { passwordHash: hash, resetTokenHash: null, resetTokenExpiresAt: null, failedLoginCount: 0, updatedAt: now() },
+    });
+    return { ok: true, message: 'Senha alterada com sucesso' };
   }
 
   @Post('auth/logout')
