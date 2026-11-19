@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Redefinir senha — Igreja Shallom</title>
+  <link rel="icon" type="image/png" href="assets/logo-azul.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:'Inter',sans-serif;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#F1F5F9;color:#141B2B;padding:24px}
+    .reset-container{width:100%;max-width:440px}
+    .reset-card{background:#fff;border-radius:16px;padding:40px 32px;box-shadow:0 4px 24px rgba(16,59,95,.10)}
+    .reset-logo{width:72px;height:72px;border-radius:18px;overflow:hidden;margin:0 auto 16px;box-shadow:0 6px 20px rgba(16,59,95,.25)}
+    .reset-logo img{width:100%;height:100%;object-fit:cover}
+    .reset-header{text-align:center;margin-bottom:28px}
+    .reset-header h1{font-size:20px;font-weight:500;margin-bottom:4px}
+    .reset-header p{font-size:13px;color:#6B7280;line-height:1.5}
+    .form-group{margin-bottom:18px}
+    .form-group label{display:block;font-size:13px;font-weight:500;color:#464555;margin-bottom:6px}
+    .form-group input{width:100%;padding:12px 16px;border:1px solid #E8EDF3;background:#F9FAFB;border-radius:8px;font-family:'Inter',sans-serif;font-size:14px;color:#141B2B;transition:background .2s,border-color .2s}
+    .form-group input:focus{outline:none;border-color:#103B5F;background:#fff}
+    .reset-btn{width:100%;padding:12px;background:#103B5F;color:#fff;border:none;border-radius:8px;font-family:'Inter',sans-serif;font-size:14px;font-weight:500;cursor:pointer;transition:background .2s;margin-top:4px}
+    .reset-btn:hover{background:#0B2B47}
+    .reset-btn:disabled{opacity:.6;cursor:wait}
+    .reset-msg{display:none;margin-top:16px;padding:11px 12px;border-radius:8px;font-size:12.5px;line-height:1.5}
+    .reset-msg.success{display:block;background:#ECFDF5;color:#059669;border:1px solid #A7F3D0}
+    .reset-msg.error{display:block;background:#FEF2F2;color:#DC2626;border:1px solid #FECACA}
+    .back-link{display:block;text-align:center;margin-top:18px;font-size:12px;color:#103B5F;text-decoration:none}
+    .back-link:hover{text-decoration:underline;color:#16A2AD}
+    .reset-footer{text-align:center;margin-top:20px;font-size:11px;color:#94A3B8}
+    .reset-footer b{color:#103B5F;font-weight:500}
+    .hidden{display:none!important}
+  </style>
+</head>
+<body>
+  <div class="reset-container">
+    <div class="reset-card">
+      <div class="reset-logo"><img src="assets/logo-azul.png" alt="Igreja Shallom"></div>
+      <div class="reset-header">
+        <h1>Redefinir senha</h1>
+        <p>Crie uma nova senha para acessar o painel da Igreja Shallom.</p>
+      </div>
+      <form id="resetForm" onsubmit="handleReset(event)">
+        <div class="form-group">
+          <label>Nova senha</label>
+          <input type="password" id="newPassword" minlength="6" placeholder="Mínimo de 6 caracteres" required>
+        </div>
+        <div class="form-group">
+          <label>Confirmar nova senha</label>
+          <input type="password" id="confirmPassword" minlength="6" placeholder="Digite novamente" required>
+        </div>
+        <button type="submit" class="reset-btn" id="resetBtn">Salvar nova senha</button>
+      </form>
+      <div class="reset-msg" id="resetMsg"></div>
+      <a class="back-link" href="index.html">Voltar ao login</a>
+      <div class="reset-footer">Desenvolvido por <b>Nextep Solutions</b></div>
+    </div>
+  </div>
+  <script>
+    const params = new URLSearchParams(location.search);
+    const token = (params.get('token') || '').trim();
+    const msg = document.getElementById('resetMsg');
+    const form = document.getElementById('resetForm');
+    const btn = document.getElementById('resetBtn');
+
+    function showMsg(text, type) {
+      if (!msg) return;
+      msg.className = 'reset-msg ' + type;
+      msg.textContent = text;
+    }
+
+    async function apiPost(path, body) {
+      const r = await fetch('/api' + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      let data = null;
+      try { data = await r.json(); } catch (e) { data = null; }
+      if (!r.ok) {
+        const m = data && (Array.isArray(data.message) ? data.message.join(' ') : data.message);
+        throw new Error(m || 'Não foi possível concluir a solicitação.');
+      }
+      return data;
+    }
+
+    async function validateToken() {
+      if (!token) { showMsg('Link de recuperação inválido. Solicite um novo.', 'error'); form.classList.add('hidden'); return; }
+      try {
+        const result = await apiPost('/auth/validate-reset-token', { token });
+        if (!result || !result.valid) {
+          showMsg('Link de recuperação inválido ou expirado. Solicite um novo.', 'error');
+          form.classList.add('hidden');
+        }
+      } catch (e) {
+        showMsg(e.message || 'Não foi possível validar o link.', 'error');
+        form.classList.add('hidden');
+      }
+    }
+
+    async function handleReset(e) {
+      e.preventDefault();
+      const password = document.getElementById('newPassword').value;
+      const confirm = document.getElementById('confirmPassword').value;
+      if (password.length < 6) { showMsg('A senha deve ter pelo menos 6 caracteres.', 'error'); return; }
+      if (password !== confirm) { showMsg('As senhas não conferem.', 'error'); return; }
+      btn.disabled = true;
+      btn.textContent = 'Salvando...';
+      try {
+        await apiPost('/auth/reset-password', { token, password });
+        form.classList.add('hidden');
+        showMsg('Senha alterada com sucesso! Você já pode entrar com a nova senha.', 'success');
+      } catch (err) {
+        showMsg(err.message || 'Não foi possível alterar a senha.', 'error');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Salvar nova senha';
+      }
+    }
+
+    validateToken();
+  </script>
+</body>
+</html>

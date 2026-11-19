@@ -80,6 +80,10 @@ function getSessionUser() {
 
 function canAccess(section) {
   if (!currentUser) return false;
+  if (section === 'setores') {
+    if (isFullAccess()) return true;
+    return currentUserLedSectors().length > 0;
+  }
   if (section === 'ministerio') {
     if (['admin', 'pastor'].includes(currentUser.role)) return true;
     const sector = (window.apiSectors || []).find(s => s.id === ministryPageId);
@@ -89,6 +93,14 @@ function canAccess(section) {
   const key = keyMap[section] || section;
   const allowed = ROLE_ACCESS[currentUser.role] || [];
   return allowed.includes(key);
+}
+
+function currentUserLedSectors() {
+  const uid = currentUser && currentUser.id;
+  if (!uid) return [];
+  return (window.apiSectors || []).filter(s =>
+    (s.leaderUserIds || []).includes(uid) || s.leaderUserId === uid
+  );
 }
 
 // Papel do usuário logado no formato aceito pela API.
@@ -2672,8 +2684,16 @@ function deptToneClass(tone) {
   return tone === 'green' ? 'pill-green' : tone === 'orange' ? 'pill-orange' : tone === 'red' ? 'pill-red' : '';
 }
 
+function visibleDepartments() {
+  const all = mockDepartments || [];
+  if (isFullAccess()) return all;
+  const uid = currentUser && currentUser.id;
+  if (!uid) return [];
+  return all.filter(d => (d.leaderUserIds || []).includes(uid) || d.leaderUserId === uid);
+}
+
 function renderSetorKpis() {
-  const list = mockDepartments;
+  const list = visibleDepartments();
   const total = list.length;
   const members = list.reduce((s, d) => s + (d.volunteers || 0), 0);
   const withLeader = list.filter(d => !!d.leaderUserId).length;
@@ -2705,13 +2725,13 @@ function renderSetorKpis() {
 function renderDeptTabs() {
   const tabs = document.getElementById('deptTabs');
   if (!tabs) {
-    setText('deptTabTodos', mockDepartments.length);
+    setText('deptTabTodos', visibleDepartments().length);
     return;
   }
   tabs.querySelectorAll('.dept-tab').forEach(b => {
     b.classList.toggle('active', b.dataset.tab === deptTab);
   });
-  setText('deptTabTodos', mockDepartments.length);
+  setText('deptTabTodos', visibleDepartments().length);
 }
 
 function setDeptTab(tab) {
@@ -2723,9 +2743,11 @@ function setDeptTab(tab) {
 function renderDeptGrid() {
   const grid = document.getElementById('deptGrid');
   if (!grid) return;
-  const list = mockDepartments;
+  const list = visibleDepartments();
   if (!list.length) {
-    grid.innerHTML = '<div class="empty-state"><i data-lucide="network"></i><p>Nenhum ministério cadastrado. Crie o primeiro em "Novo Ministério".</p></div>';
+    grid.innerHTML = isFullAccess()
+      ? '<div class="empty-state"><i data-lucide="network"></i><p>Nenhum ministério cadastrado. Crie o primeiro em "Novo Ministério".</p></div>'
+      : '<div class="empty-state"><i data-lucide="shield"></i><p>Você ainda não lidera nenhum ministério. Fale com o pastor ou admin master.</p></div>';
     if (window.lucide) lucide.createIcons();
     return;
   }
@@ -2759,7 +2781,7 @@ function renderDeptGrid() {
 }
 
 function renderSaudeMinisterial() {
-  const list = mockDepartments;
+  const list = visibleDepartments();
   const noLeader = list.filter(d => !d.leaderUserId);
   const noMembers = list.filter(d => (d.volunteers || 0) === 0);
 
@@ -3920,6 +3942,13 @@ async function renderMinistryPage() {
 }
 
 function renderSetores() {
+  const full = isFullAccess();
+  setText('setoresTitle', full ? 'Setores & Ministérios' : 'Meus Ministérios');
+  setText('setoresSub', full
+    ? 'Gerencie cada ministério: liderança, cargos, membros ativos, escalas e histórico de alterações.'
+    : 'Você vê e configura apenas os ministérios que lidera.');
+  const newBtn = document.getElementById('newMinistryBtn');
+  if (newBtn) newBtn.style.display = full ? '' : 'none';
   renderSetorKpis();
   renderDeptTabs();
   renderDeptGrid();
@@ -5646,6 +5675,7 @@ document.addEventListener('DOMContentLoaded', function () {
     hydrateFromApi().then((ok) => {
       if (!ok) return;
       updateNextService();
+      applyPermissions();
       const activeSection = document.querySelector('.page-section.active');
       const activeId = activeSection ? activeSection.id.replace('section-', '') : 'dashboard';
       refreshSection(activeId);

@@ -126,6 +126,8 @@ model User {
   lastLoginAt      String?
   biometricEnabled Boolean @default(false)
   memberCode       String? @unique
+  resetTokenHash   String?
+  resetTokenExpiresAt String?
   createdAt        String  @default("")
   updatedAt        String  @default("")
 

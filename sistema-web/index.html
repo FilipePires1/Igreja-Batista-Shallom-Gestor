@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Igreja Shallom - Admin Workspace</title>
+  <link rel="icon" type="image/png" href="assets/logo-azul.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&display=swap" rel="stylesheet">
@@ -26,11 +27,25 @@
     .form-group input::placeholder{color:#777587}
     .login-btn{width:100%;padding:12px;background:#103B5F;color:#fff;border:none;border-radius:8px;font-family:'Inter',sans-serif;font-size:14px;font-weight:500;cursor:pointer;transition:background .2s;margin-top:8px}
     .login-btn:hover{background:#0B2B47}
+    .forgot-link{display:block;margin:-10px 0 14px auto;width:max-content;padding:0;border:none;background:none;font:inherit;font-size:12px;color:#103B5F;cursor:pointer}
+    .forgot-link:hover{text-decoration:underline;color:#16A2AD}
+    .forgot-form h3{font-size:18px;color:#141B2B;margin-bottom:6px}
+    .forgot-form>p{font-size:12px;line-height:1.5;color:#6B7280;margin-bottom:20px}
+    .back-link{display:block;margin:12px auto 0;padding:0;border:none;background:none;font:inherit;font-size:12px;color:#6B7280;cursor:pointer}
+    .back-link:hover{color:#103B5F;text-decoration:underline}
+    .forgot-msg{display:none;margin-top:14px;padding:10px 12px;border-radius:8px;font-size:12px;line-height:1.5}
+    .forgot-msg.success{display:block;background:#ECFDF5;color:#059669;border:1px solid #A7F3D0}
+    .forgot-msg.error{display:block;background:#FEF2F2;color:#DC2626;border:1px solid #FECACA}
+    .forgot-msg a{color:inherit;font-weight:600;text-decoration:underline}
+    .forgot-msg a.dev-link{word-break:break-all}
+    #forgotSubmitBtn:disabled{opacity:.6;cursor:wait}
     .login-footer{text-align:center;margin-top:24px}
+    .login-footer-outside{margin-top:18px}
     .login-footer p{font-size:12px;color:#777587}
-    .dev-credit{display:flex;flex-direction:column;align-items:center;gap:6px;margin-bottom:8px}
+    .dev-credit{display:flex;flex-direction:row;align-items:center;justify-content:center;gap:0;margin-bottom:8px}
     .dev-label{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#777587}
-    .dev-brand{display:inline-flex;align-items:center;gap:8px;text-decoration:none}
+    .dev-brand{display:inline-flex;align-items:center;gap:4px;text-decoration:none}
+    .dev-brand:hover .dev-label{color:#16A2AD}
     .dev-brand img{width:26px;height:26px;border-radius:7px;box-shadow:0 2px 8px rgba(16,59,95,.25)}
     .dev-brand b{font-size:13px;font-weight:500;color:#103B5F;transition:color .2s}
     .dev-brand:hover b{color:#16A2AD}
@@ -57,18 +72,29 @@
           <label>Senha</label>
           <input type="password" id="password" placeholder="Digite sua senha" required>
         </div>
+        <button type="button" class="forgot-link" onclick="showForgotPassword()">Esqueci minha senha</button>
         <button type="submit" class="login-btn">Entrar</button>
       </form>
-      <div class="login-footer">
-        <div class="dev-credit">
-          <span class="dev-label">Desenvolvido por</span>
-          <a class="dev-brand" href="https://nextepsolutions.com.br" target="_blank" rel="noopener noreferrer" aria-label="Nextep Solutions — abrir site oficial">
-            <img src="assets/logo-azul.png" alt="Nextep Solutions">
-            <b>Nextep Solutions</b>
-          </a>
+      <form id="forgotForm" class="forgot-form" style="display:none" onsubmit="handleForgotPassword(event)">
+        <h3>Recuperar senha</h3>
+        <p>Informe o e-mail cadastrado no sistema. Enviaremos um link para você criar uma nova senha.</p>
+        <div class="form-group">
+          <label>E-mail</label>
+          <input type="email" id="forgotEmail" placeholder="seu@email.com" required>
         </div>
-        <p>Versão 1.0.0</p>
+        <button type="submit" class="login-btn" id="forgotSubmitBtn">Enviar link de recuperação</button>
+        <button type="button" class="back-link" onclick="hideForgotPassword()">Voltar ao login</button>
+        <div class="forgot-msg" id="forgotMsg"></div>
+      </form>
+    </div>
+    <div class="login-footer login-footer-outside">
+      <div class="dev-credit">
+        <a class="dev-brand" href="https://nextepsolutions.com.br" target="_blank" rel="noopener noreferrer" aria-label="Desenvolvido por Nextep Solutions — abrir site oficial">
+          <span class="dev-label">Desenvolvido por</span>
+          <b>Nextep Solutions</b>
+        </a>
       </div>
+      <p>Versão 1.0.0</p>
     </div>
   </div>
   <script>
@@ -113,6 +139,86 @@
         } catch (e) { /* tenta próximo base */ }
       }
       return { error: 'Não foi possível conectar ao servidor. Verifique se o sistema está online.' };
+    }
+
+    async function authApiPost(path, body) {
+      let lastError = null;
+      for (const base of API_BASES) {
+        try {
+          const ctrl = new AbortController();
+          const timer = setTimeout(() => ctrl.abort(), 8000);
+          const r = await fetch(base + path, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body), signal: ctrl.signal,
+          });
+          clearTimeout(timer);
+          let data = null;
+          try { data = await r.json(); } catch (e) { data = null; }
+          if (!r.ok) {
+            const msg = data && (Array.isArray(data.message) ? data.message.join(' ') : data.message);
+            throw new Error(msg || 'Não foi possível concluir a solicitação.');
+          }
+          return data;
+        } catch (e) {
+          lastError = e;
+        }
+      }
+      throw lastError || new Error('Não foi possível conectar ao servidor.');
+    }
+
+    function showForgotPassword() {
+      const loginForm = document.getElementById('loginForm');
+      const forgotForm = document.getElementById('forgotForm');
+      const errEl = document.getElementById('errorMsg');
+      const msg = document.getElementById('forgotMsg');
+      if (errEl) errEl.style.display = 'none';
+      if (msg) { msg.className = 'forgot-msg'; msg.textContent = ''; }
+      const email = document.getElementById('email');
+      const forgotEmail = document.getElementById('forgotEmail');
+      if (email && forgotEmail) forgotEmail.value = email.value.trim();
+      if (loginForm) loginForm.style.display = 'none';
+      if (forgotForm) forgotForm.style.display = 'block';
+      if (forgotEmail) setTimeout(() => forgotEmail.focus(), 80);
+    }
+
+    function hideForgotPassword() {
+      const loginForm = document.getElementById('loginForm');
+      const forgotForm = document.getElementById('forgotForm');
+      if (loginForm) loginForm.style.display = '';
+      if (forgotForm) forgotForm.style.display = 'none';
+    }
+
+    async function handleForgotPassword(e) {
+      e.preventDefault();
+      const emailEl = document.getElementById('forgotEmail');
+      const msg = document.getElementById('forgotMsg');
+      const btn = document.getElementById('forgotSubmitBtn');
+      const email = (emailEl ? emailEl.value : '').trim().toLowerCase();
+      if (!email) return;
+      if (btn) { btn.disabled = true; btn.textContent = 'Enviando...'; }
+      if (msg) { msg.className = 'forgot-msg'; msg.textContent = ''; }
+      try {
+        const result = await authApiPost('/auth/forgot-password', { email, baseUrl: location.origin });
+        if (msg) {
+          msg.className = 'forgot-msg success';
+          msg.textContent = (result && result.message) || 'Se este e-mail estiver cadastrado, enviaremos as instruções de recuperação.';
+          if (result && result.devResetUrl) {
+            const link = document.createElement('a');
+            link.className = 'dev-link';
+            link.href = result.devResetUrl;
+            link.textContent = ' Abrir link de redefinição (ambiente local)';
+            msg.appendChild(document.createElement('br'));
+            msg.appendChild(link);
+          }
+        }
+      } catch (err) {
+        if (msg) {
+          msg.className = 'forgot-msg error';
+          msg.textContent = err && err.message ? err.message : 'Não foi possível enviar o e-mail de recuperação.';
+        }
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = 'Enviar link de recuperação'; }
+      }
     }
 
     function initialsOf(name) {
