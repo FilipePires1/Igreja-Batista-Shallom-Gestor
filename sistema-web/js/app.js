@@ -388,12 +388,16 @@ function renderKpis() {
   // Confirmacao de escalas
   const conf = mockShifts.reduce((a, s) => a + s.confirmed, 0);
   const total = mockShifts.reduce((a, s) => a + s.total, 0);
-  const pct = Math.round((conf / total) * 100);
+  const pct = total ? Math.round((conf / total) * 100) : 0;
   const ev = nextEvent();
   const DIAS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
-  const dia = DIAS[new Date(`${ev.date}T12:00:00`).getDay()] || '';
   setText('kpiShifts', pct + '%');
-  setText('kpiShiftsHint', `${dia} ${ev.time.replace(':00', 'h').replace(':', 'h')}`);
+  if (ev) {
+    const dia = DIAS[new Date(`${ev.date}T12:00:00`).getDay()] || '';
+    setText('kpiShiftsHint', `${dia} ${ev.time.replace(':00', 'h').replace(':', 'h')}`);
+  } else {
+    setText('kpiShiftsHint', 'Sem cultos agendados');
+  }
   setText('kpiShiftsSub', `${conf} de ${total} confirmados`);
   setText('kpiShiftsPend', mockTrocas.length ? `${mockTrocas.length} troca pendente` : 'Tudo confirmado');
   const pendEl = document.getElementById('kpiShiftsPend');
@@ -421,11 +425,18 @@ function renderKpis() {
 
 function renderNextCulto() {
   const ev = nextEvent();
+  const grid = document.getElementById('squadGrid');
+  if (!ev) {
+    setText('nextCultoTitle', 'Nenhum culto agendado');
+    setText('nextCultoChip', 'Agenda vazia');
+    setText('nextCultoSub', 'Cadastre um evento na Agenda para ver a escala');
+    if (grid) grid.innerHTML = '';
+    return;
+  }
   setText('nextCultoTitle', `Próximo ${ev.name}`);
   setText('nextCultoChip', `${shortDate(ev.date)} · ${ev.time.replace(':', 'h')}`);
   setText('nextCultoSub', 'App de Membros & Escalas · Monitoramento de presença');
 
-  const grid = document.getElementById('squadGrid');
   if (!grid) return;
   grid.innerHTML = mockShifts.map(s => {
     const pending = s.total - s.confirmed;
@@ -454,6 +465,10 @@ function renderCultoAlert() {
   const card = document.getElementById('cultoAlert');
   if (!card) return;
   const ev = nextEvent();
+  if (!ev) {
+    card.style.display = 'none';
+    return;
+  }
   const pending = mockShifts.filter(s => s.total > s.confirmed);
   if (!pending.length && !mockTrocas.length) {
     card.style.display = 'none';
