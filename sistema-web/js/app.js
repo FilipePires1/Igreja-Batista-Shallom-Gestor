@@ -2109,7 +2109,20 @@ function readSheetFile(file) {
       try {
         const wb = XLSX.read(e.target.result, { type: 'array', cellDates: true });
         const ws = wb.Sheets[wb.SheetNames[0]];
-        const rows = XLSX.utils.sheet_to_json(ws, { defval: '', raw: false });
+        const matrix = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false, blankrows: false });
+        const knownHeaders = new Set([
+          'nome', 'nomecompleto', 'numero', 'n', 'no', 'titulo', 'data', 'texto', 'textodaata',
+          'datadobatismo', 'datadenascimento', 'email', 'telefone', 'endereco', 'nomecomae',
+        ]);
+        let headerIndex = matrix.findIndex((row, idx) => idx < 20 && row.some(cell => knownHeaders.has(normHeader(cell))));
+        if (headerIndex < 0) headerIndex = 0;
+        const headerRow = matrix[headerIndex] || [];
+        const headers = headerRow.map((h, i) => String(h || '').trim() || `Coluna ${i + 1}`);
+        const rows = matrix.slice(headerIndex + 1).map((row) => {
+          const item = {};
+          headers.forEach((header, i) => { item[header] = row[i] == null ? '' : row[i]; });
+          return item;
+        });
         resolve(rows);
       } catch (err) { reject(err); }
     };
@@ -2136,14 +2149,21 @@ async function importPeopleFile(input) {
     for (const row of rows) {
       const name = String(agendaRowGet(row, ['Nome', 'Nome completo', 'Membro']) || '').trim();
       if (!name) { skipped++; continue; }
+      const numberKey = Object.keys(row).find(k => ['n', 'no', 'numero', 'num'].includes(normHeader(k)));
+      if (numberKey) {
+        const numberValue = String(row[numberKey] || '').trim();
+        if (numberValue && !/^\d+$/.test(numberValue)) { skipped++; continue; }
+      }
+      if (/^(chegaram|sa[ií]ram|ata\s+\d+)/i.test(name)) { skipped++; continue; }
       if (existing.has(normHeader(name))) { skipped++; continue; }
+      const maritalRaw = String(agendaRowGet(row, ['Estado civil', 'Est.C.', 'Est C']) || '').trim();
       const payload = {
         name,
         email: String(agendaRowGet(row, ['E-mail', 'Email']) || '').trim(),
         phone: sheetPhone(agendaRowGet(row, ['Tel.Cel.', 'Telefone', 'Celular', 'Fone'])),
         birthdate: sheetDate(agendaRowGet(row, ['Dt.Nasc.', 'Data de nascimento', 'Nascimento'])),
         address: String(agendaRowGet(row, ['Endereço', 'Endereco']) || '').trim(),
-        maritalStatus: String(agendaRowGet(row, ['Estado civil', 'Est.C.', 'Est C']) || '').trim() || maritalFromCode(agendaRowGet(row, ['Est.C.', 'Est C'])),
+        maritalStatus: maritalRaw.length <= 1 ? maritalFromCode(maritalRaw) : maritalRaw,
         membershipRecordNumber: String(agendaRowGet(row, ['Nº Ata', 'N Ata', 'Ata']) || '').trim(),
         membershipNotes: 'Importado de planilha em ' + new Date().toLocaleDateString('pt-BR') + '.',
         membershipRequestStatus: 'APROVADO',
