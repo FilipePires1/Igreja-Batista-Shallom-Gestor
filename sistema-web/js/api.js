@@ -110,7 +110,7 @@ function personToMember(p) {
     hasUser: !!p.user,
     webAccess,
     login: webAccess,
-    joined: (p.memberSince || p.createdAt || '').slice(0, 10),
+    joined: (p.memberSince || '').slice(0, 10),
     tags: sm ? [sm.sector?.label || sectorLabel(sectorNm), ...(positions.length ? positions : ['Membro'])] : ['Sem ministério'],
     attendance: 0,
     baptism: p.baptismDate || '—',

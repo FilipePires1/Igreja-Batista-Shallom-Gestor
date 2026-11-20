@@ -2373,7 +2373,7 @@ function memberStatusInfo(m) {
 function peopleCounts() {
   const n = pred => mockMembers.filter(pred).length;
   const total = mockMembers.length;
-  const week = '2026-09-24';
+  const week = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   return {
     total,
     ativos: n(m => m.status === 'ativo'),
