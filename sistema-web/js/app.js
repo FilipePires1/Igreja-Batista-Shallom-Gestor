@@ -2358,7 +2358,6 @@ function exportMinutesXLSX() {
 
 // ===== PESSOAS & MEMBROS =====
 let peopleTab = 'todos';
-let peopleSort = 'recentes';
 let peoplePage = 1;
 let selectedMemberId = 8;
 const PEOPLE_PAGE_SIZE = 12;
@@ -2425,12 +2424,6 @@ function setPeopleTab(tab) {
   renderPeople();
 }
 
-function setPeopleSort(v) {
-  peopleSort = v;
-  peoplePage = 1;
-  renderPeople();
-}
-
 function toggleAdvFilters() {
   const el = document.getElementById('advFilters');
   if (el) el.classList.toggle('open');
@@ -2466,9 +2459,7 @@ function filterPeople() {
     }
     return true;
   });
-  if (peopleSort === 'nome') list.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
-  else if (peopleSort === 'assiduidade') list.sort((a, b) => (b.attendance || 0) - (a.attendance || 0));
-  else list.sort((a, b) => String(b.joined || '').localeCompare(String(a.joined || '')));
+  list.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
   return list;
 }
 
